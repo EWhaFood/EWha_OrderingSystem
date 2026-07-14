@@ -34,6 +34,9 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # firebase는 3.x 안정 세트로 고정한다. 4.x 최신 조합(core 4.x + firestore/auth 6.x)은
+  # cloud_firestore가 상속하는 FirebasePlugin 심볼이 firebase_core에서 빠져 커널 컴파일이 깨진다.
+  # 버전을 올릴 때는 flutter build apk --debug로 컴파일을 반드시 확인할 것.
   firebase_core: ^3.15.2
   cloud_firestore: ^5.6.0
   firebase_auth: ^5.6.0
