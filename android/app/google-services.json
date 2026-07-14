@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "531576014179",
+    "project_id": "efodersystem",
+    "storage_bucket": "efodersystem.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:531576014179:android:3b9bc5de4fd118a1443f56",
+        "android_client_info": {
+          "package_name": "com.ewha.orderingsystem.ewha_orderingsystem"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfAaEJ6UsrapZlS-MUgkIQLUhIZuHW3MA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

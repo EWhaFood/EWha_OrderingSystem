@@ -1,0 +1,35 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ],
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "efodersystem",
+          "appId": "1:531576014179:android:3b9bc5de4fd118a1443f56",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "efodersystem",
+          "configurations": {
+            "android": "1:531576014179:android:3b9bc5de4fd118a1443f56",
+            "ios": "1:531576014179:ios:ab9baf80ff4f5187443f56"
+          }
+        }
+      }
+    }
+  }
+}
