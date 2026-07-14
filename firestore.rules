@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// EWOS-9 보안 규칙 초안. 개발 초기부터 최소 접근 제어를 건다.
+// EWOS-29에서 스키마 유효성 검증까지 보강해 최종화한다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOperator() {
+      return isSignedIn() && userDoc().role == 'operator';
+    }
+
+    function myPartnerId() {
+      return isSignedIn() ? userDoc().partnerId : null;
+    }
+
+    // 본인 문서만 read. role/partnerId는 클라이언트 수정 금지(Functions만).
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // 운영자만 write. 해당 거래처 본인은 자기 문서 read.
+    match /partners/{partnerId} {
+      allow read: if isOperator() || (isSignedIn() && myPartnerId() == partnerId);
+      allow write: if isOperator();
+    }
+
+    // 로그인 사용자 read, 운영자만 write.
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isOperator();
+    }
+
+    // 거래처는 자기 발주만 read + create(자기 partnerId·source='app'만).
+    // 상태 변경(update)은 운영자만.
+    match /orders/{orderId} {
+      allow read: if isOperator() ||
+        (isSignedIn() && resource.data.partnerId == myPartnerId());
+      allow create: if isOperator() ||
+        (isSignedIn() &&
+         request.resource.data.partnerId == myPartnerId() &&
+         request.resource.data.source == 'app' &&
+         request.resource.data.status == 'new');
+      allow update, delete: if isOperator();
+    }
+
+    // 카페24 토큰 등 시크릿: 클라이언트 접근 전면 금지 (Functions Admin SDK 전용).
+    match /secrets/{doc} {
+      allow read, write: if false;
+    }
+  }
+}
