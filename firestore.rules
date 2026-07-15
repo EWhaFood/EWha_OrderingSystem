@@ -21,10 +21,13 @@ service cloud.firestore {
       return isSignedIn() ? userDoc().partnerId : null;
     }
 
-    // 본인 문서만 read. role/partnerId는 클라이언트 수정 금지(Functions만).
+    // 본인 문서만 read. 본인이 자기 fcmTokens만 갱신하는 update는 허용하되,
+    // role·partnerId·email 등 민감 필드 변경과 create/delete는 금지(위조 방지, Functions 전용).
     match /users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
-      allow write: if false;
+      allow update: if isSignedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens']);
+      allow create, delete: if false;
     }
 
     // 운영자만 write. 해당 거래처 본인은 자기 문서 read.

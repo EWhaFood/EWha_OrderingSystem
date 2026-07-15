@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 13+ 알림 표시 권한 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="ewha_orderingsystem"
         android:name="${applicationName}"
@@ -30,6 +32,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 백그라운드/종료 상태에서 OS가 FCM 알림을 표시할 기본 채널.
+             앱이 FcmService에서 생성하는 'orders' 채널과 일치시킨다. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="orders" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

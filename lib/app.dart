@@ -4,7 +4,14 @@ import 'package:flutter/material.dart';
 
 import 'core/models/app_user.dart';
 import 'core/models/partner.dart';
+import 'core/services/fcm_service.dart';
 import 'features/auth/login_screen.dart';
+
+/// 로그아웃. 현재 기기 토큰을 먼저 제거해 이후 푸시 수신을 막은 뒤 세션을 종료한다.
+Future<void> logout(String uid) async {
+  await FcmService.unregisterToken(uid);
+  await FirebaseAuth.instance.signOut();
+}
 
 class EwhaOrderingApp extends StatelessWidget {
   const EwhaOrderingApp({super.key});
@@ -45,17 +52,29 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-/// users/{uid} 문서를 읽어 role별로 라우팅한다.
+/// users/{uid} 문서를 읽어 role별로 라우팅한다. 진입 시 이 기기의 FCM 토큰을 등록한다.
 /// operator는 바로 홈, partner는 활성 여부 확인 게이트로 넘긴다.
-class _RoleRouter extends StatelessWidget {
+class _RoleRouter extends StatefulWidget {
   const _RoleRouter({required this.uid});
 
   final String uid;
 
   @override
+  State<_RoleRouter> createState() => _RoleRouterState();
+}
+
+class _RoleRouterState extends State<_RoleRouter> {
+  @override
+  void initState() {
+    super.initState();
+    // 로그인된 사용자의 토큰을 등록한다 (실패해도 화면 진입은 막지 않는다).
+    FcmService.registerToken(widget.uid);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final DocumentReference<Map<String, dynamic>> ref =
-        FirebaseFirestore.instance.collection('users').doc(uid);
+        FirebaseFirestore.instance.collection('users').doc(widget.uid);
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: ref.get(),
       builder: (BuildContext context,
@@ -65,9 +84,9 @@ class _RoleRouter extends StatelessWidget {
         }
         final AppUser appUser = AppUser.fromDoc(snapshot.data!);
         if (appUser.isOperator) {
-          return const _HomePlaceholder(label: '운영자 홈');
+          return _HomePlaceholder(uid: widget.uid, label: '운영자 홈');
         }
-        return _PartnerGate(partnerId: appUser.partnerId);
+        return _PartnerGate(uid: widget.uid, partnerId: appUser.partnerId);
       },
     );
   }
@@ -75,14 +94,16 @@ class _RoleRouter extends StatelessWidget {
 
 /// 거래처 계정의 활성 여부를 확인한다. active=false면 접근을 차단한다.
 class _PartnerGate extends StatelessWidget {
-  const _PartnerGate({required this.partnerId});
+  const _PartnerGate({required this.uid, required this.partnerId});
 
+  final String uid;
   final String? partnerId;
 
   @override
   Widget build(BuildContext context) {
     if (partnerId == null) {
-      return const _BlockedScreen(message: '연결된 거래처가 없습니다. 관리자에게 문의하세요.');
+      return _BlockedScreen(
+          uid: uid, message: '연결된 거래처가 없습니다. 관리자에게 문의하세요.');
     }
     final DocumentReference<Map<String, dynamic>> ref =
         FirebaseFirestore.instance.collection('partners').doc(partnerId);
@@ -95,9 +116,10 @@ class _PartnerGate extends StatelessWidget {
         }
         final Partner partner = Partner.fromDoc(snapshot.data!);
         if (!partner.active) {
-          return const _BlockedScreen(message: '비활성화된 거래처 계정입니다. 관리자에게 문의하세요.');
+          return _BlockedScreen(
+              uid: uid, message: '비활성화된 거래처 계정입니다. 관리자에게 문의하세요.');
         }
-        return _HomePlaceholder(label: '거래처 홈 (${partner.name})');
+        return _HomePlaceholder(uid: uid, label: '거래처 홈 (${partner.name})');
       },
     );
   }
@@ -114,8 +136,9 @@ class _SplashScreen extends StatelessWidget {
 
 /// 접근 차단 안내. 로그아웃 버튼으로 로그인 화면으로 돌아갈 수 있다.
 class _BlockedScreen extends StatelessWidget {
-  const _BlockedScreen({required this.message});
+  const _BlockedScreen({required this.uid, required this.message});
 
+  final String uid;
   final String message;
 
   @override
@@ -132,7 +155,7 @@ class _BlockedScreen extends StatelessWidget {
               Text(message, textAlign: TextAlign.center),
               const SizedBox(height: 20),
               OutlinedButton(
-                onPressed: () => FirebaseAuth.instance.signOut(),
+                onPressed: () => logout(uid),
                 child: const Text('로그아웃'),
               ),
             ],
@@ -145,8 +168,9 @@ class _BlockedScreen extends StatelessWidget {
 
 /// 역할별 홈 자리표시자. 실제 홈은 EWOS-11(거래처)·EWOS-13(운영자)에서 구현한다.
 class _HomePlaceholder extends StatelessWidget {
-  const _HomePlaceholder({required this.label});
+  const _HomePlaceholder({required this.uid, required this.label});
 
+  final String uid;
   final String label;
 
   @override
@@ -157,7 +181,7 @@ class _HomePlaceholder extends StatelessWidget {
         actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
+            onPressed: () => logout(uid),
           ),
         ],
       ),
