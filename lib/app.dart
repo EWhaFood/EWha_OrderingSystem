@@ -7,6 +7,7 @@ import 'core/models/partner.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/fcm_service.dart';
 import 'features/auth/login_screen.dart';
+import 'features/orders/operator_order_list_screen.dart';
 import 'features/orders/order_form_screen.dart';
 
 class EwhaOrderingApp extends StatelessWidget {
@@ -80,7 +81,7 @@ class _RoleRouterState extends State<_RoleRouter> {
         }
         final AppUser appUser = AppUser.fromDoc(snapshot.data!);
         if (appUser.isOperator) {
-          return _HomePlaceholder(uid: widget.uid, label: '운영자 홈');
+          return OperatorOrderListScreen(uid: widget.uid);
         }
         return _PartnerGate(uid: widget.uid, partnerId: appUser.partnerId);
       },
@@ -158,30 +159,6 @@ class _BlockedScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// 역할별 홈 자리표시자. 실제 홈은 EWOS-11(거래처)·EWOS-13(운영자)에서 구현한다.
-class _HomePlaceholder extends StatelessWidget {
-  const _HomePlaceholder({required this.uid, required this.label});
-
-  final String uid;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(label),
-        actions: <Widget>[
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => logout(uid),
-          ),
-        ],
-      ),
-      body: Center(child: Text(label)),
     );
   }
 }

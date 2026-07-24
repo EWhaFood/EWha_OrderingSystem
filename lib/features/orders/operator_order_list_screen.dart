@@ -1,0 +1,314 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+import '../../core/constants/order_status.dart';
+import '../../core/models/order.dart' as model;
+import '../../core/services/auth_service.dart';
+import '../../core/utils/format.dart';
+import 'widgets/order_badges.dart';
+
+/// 운영자 홈. 앱·카페24 모든 채널의 발주를 한 목록에서 실시간으로 본다.
+/// 목록은 스트림 구독이라 거래처가 발주를 넣으면 새로고침 없이 최상단에 나타난다.
+class OperatorOrderListScreen extends StatefulWidget {
+  const OperatorOrderListScreen({super.key, required this.uid});
+
+  final String uid;
+
+  @override
+  State<OperatorOrderListScreen> createState() =>
+      _OperatorOrderListScreenState();
+}
+
+class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _scrollCtrl = ScrollController();
+
+  /// null이면 전체 보기.
+  OrderStatus? _filter;
+  String _query = '';
+
+  /// 무한 스크롤: 처음 30건을 받고 바닥에 닿을 때마다 늘린다.
+  int _limit = 30;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final bool nearBottom = _scrollCtrl.position.pixels >=
+        _scrollCtrl.position.maxScrollExtent - 200;
+    if (nearBottom) setState(() => _limit += 30);
+  }
+
+  /// 상태 필터는 서버 쿼리로, 검색어는 클라이언트에서 거른다.
+  /// (Firestore는 부분 일치 검색을 지원하지 않아 목록 범위 안에서 필터링한다.)
+  Stream<QuerySnapshot<Map<String, dynamic>>> get _stream {
+    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+        .collection('orders')
+        .orderBy('createdAt', descending: true)
+        .limit(_limit);
+    if (_filter != null) {
+      q = FirebaseFirestore.instance
+          .collection('orders')
+          .where('status', isEqualTo: _filter!.code)
+          .orderBy('createdAt', descending: true)
+          .limit(_limit);
+    }
+    return q.snapshots();
+  }
+
+  List<model.Order> _filtered(List<model.Order> orders) {
+    if (_query.isEmpty) return orders;
+    final String q = _query.toLowerCase();
+    return orders.where((model.Order o) {
+      final String partner = (o.partnerName ?? '미분류').toLowerCase();
+      return partner.contains(q) || o.orderNo.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('발주 현황'),
+        actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () => logout(widget.uid),
+          ),
+        ],
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _stream,
+        builder: (BuildContext context,
+            AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snap) {
+          if (snap.hasError) {
+            return const Center(child: Text('발주를 불러오지 못했습니다'));
+          }
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final List<model.Order> all =
+              snap.data!.docs.map(model.Order.fromDoc).toList();
+          return _body(all);
+        },
+      ),
+    );
+  }
+
+  Widget _body(List<model.Order> all) {
+    final List<model.Order> list = _filtered(all);
+    return RefreshIndicator(
+      // 스트림이라 자동 갱신되지만, 사용자가 확인차 당길 수 있게 남겨둔다.
+      onRefresh: () async => setState(() {}),
+      child: ListView(
+        controller: _scrollCtrl,
+        children: <Widget>[
+          _SummaryCards(orders: all),
+          _searchField(),
+          _filterChips(all),
+          if (list.isEmpty) _emptyState() else ...list.map(_orderCard),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: TextField(
+        controller: _searchCtrl,
+        decoration: const InputDecoration(
+          hintText: '거래처명 · 주문번호 검색',
+          prefixIcon: Icon(Icons.search),
+          isDense: true,
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (String v) => setState(() => _query = v.trim()),
+      ),
+    );
+  }
+
+  Widget _filterChips(List<model.Order> all) {
+    final int newCount =
+        all.where((model.Order o) => o.status == OrderStatus.newOrder).length;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: <Widget>[
+          _chip('전체', null),
+          _chip('신규${newCount > 0 ? ' $newCount' : ''}', OrderStatus.newOrder),
+          _chip('처리중', OrderStatus.processing),
+          _chip('배송중', OrderStatus.shipping),
+          _chip('완료', OrderStatus.done),
+          _chip('보류', OrderStatus.hold),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, OrderStatus? status) {
+    final bool selected = _filter == status;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: ChoiceChip(
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        selected: selected,
+        onSelected: (_) => setState(() {
+          _filter = status;
+          _limit = 30;
+        }),
+      ),
+    );
+  }
+
+  Widget _emptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Center(
+        child: Text(
+          _query.isNotEmpty
+              ? '"$_query" 검색 결과가 없습니다'
+              : _filter == null
+                  ? '아직 들어온 발주가 없습니다'
+                  : '${_filter!.operatorLabel} 상태의 발주가 없습니다',
+          style: const TextStyle(color: Color(0xFF8A8880)),
+        ),
+      ),
+    );
+  }
+
+  Widget _orderCard(model.Order o) {
+    return InkWell(
+      onTap: () => _openDetail(o),
+      child: Container(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: Color(0xFFE3E1D9), width: 0.5)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                // 카페24 주문 중 거래처 매핑이 안 된 건은 '미분류'로 구분해 보여준다.
+                Text(o.partnerName ?? '미분류',
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500)),
+                const SizedBox(width: 6),
+                StatusBadge(status: o.status),
+                const SizedBox(width: 4),
+                SourceBadge(source: o.source),
+                const Spacer(),
+                Text(formatListTime(o.createdAt?.toDate()),
+                    style: const TextStyle(
+                        fontSize: 11, color: Color(0xFF8A8880))),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(_summary(o),
+                style:
+                    const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
+            const SizedBox(height: 4),
+            Text(formatWon(o.totalAmount),
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _summary(model.Order o) {
+    if (o.items.isEmpty) return '품목 없음';
+    final String first = o.items.first.name;
+    return o.items.length > 1 ? '$first 외 ${o.items.length - 1}건' : first;
+  }
+
+  /// 발주 상세·상태 변경은 EWOS-14에서 연결한다.
+  void _openDetail(model.Order o) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${o.orderNo} — 상세 화면은 EWOS-14에서 연결됩니다')),
+    );
+  }
+}
+
+/// 상단 요약 카드 3개. 화면에 받아둔 목록으로 계산해 추가 조회를 하지 않는다.
+class _SummaryCards extends StatelessWidget {
+  const _SummaryCards({required this.orders});
+
+  final List<model.Order> orders;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime now = DateTime.now();
+    final int todayNew = orders.where((model.Order o) {
+      final DateTime? t = o.createdAt?.toDate();
+      return o.status == OrderStatus.newOrder &&
+          t != null &&
+          t.year == now.year &&
+          t.month == now.month &&
+          t.day == now.day;
+    }).length;
+    final int inProgress = orders
+        .where((model.Order o) =>
+            o.status == OrderStatus.processing ||
+            o.status == OrderStatus.shipping)
+        .length;
+    final int monthTotal = orders.where((model.Order o) {
+      final DateTime? t = o.createdAt?.toDate();
+      return t != null && t.year == now.year && t.month == now.month;
+    }).fold(0, (int sum, model.Order o) => sum + o.totalAmount);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Row(
+        children: <Widget>[
+          _card('오늘 신규', '$todayNew건'),
+          const SizedBox(width: 8),
+          _card('진행 중', '$inProgress건'),
+          const SizedBox(width: 8),
+          _card('이번 달', formatWon(monthTotal)),
+        ],
+      ),
+    );
+  }
+
+  Widget _card(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F4EF),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(label,
+                style:
+                    const TextStyle(fontSize: 11, color: Color(0xFF8A8880))),
+            const SizedBox(height: 2),
+            Text(value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+}
