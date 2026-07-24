@@ -4,14 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'core/models/app_user.dart';
 import 'core/models/partner.dart';
+import 'core/services/auth_service.dart';
 import 'core/services/fcm_service.dart';
 import 'features/auth/login_screen.dart';
-
-/// 로그아웃. 현재 기기 토큰을 먼저 제거해 이후 푸시 수신을 막은 뒤 세션을 종료한다.
-Future<void> logout(String uid) async {
-  await FcmService.unregisterToken(uid);
-  await FirebaseAuth.instance.signOut();
-}
+import 'features/orders/order_form_screen.dart';
 
 class EwhaOrderingApp extends StatelessWidget {
   const EwhaOrderingApp({super.key});
@@ -119,7 +115,7 @@ class _PartnerGate extends StatelessWidget {
           return _BlockedScreen(
               uid: uid, message: '비활성화된 거래처 계정입니다. 관리자에게 문의하세요.');
         }
-        return _HomePlaceholder(uid: uid, label: '거래처 홈 (${partner.name})');
+        return OrderFormScreen(uid: uid, partner: partner);
       },
     );
   }

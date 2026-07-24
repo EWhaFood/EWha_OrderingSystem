@@ -80,31 +80,53 @@ class FcmService {
   }
 
   /// 로그인 사용자의 기기 토큰을 users.fcmTokens에 저장하고 갱신을 구독한다.
+  /// 토큰 등록이 실패해도 화면 진입을 막지 않되, 원인을 알 수 있게 로그를 남긴다.
   static Future<void> registerToken(String uid) async {
-    final String? token = await FirebaseMessaging.instance.getToken();
-    if (token != null) await _saveToken(uid, token);
+    try {
+      final String? token = await FirebaseMessaging.instance.getToken();
+      if (token == null) {
+        debugPrint('FCM 토큰 발급 실패 (Play 서비스/네트워크 확인 필요)');
+        return;
+      }
+      await _saveToken(uid, token);
+    } catch (e) {
+      debugPrint('FCM 토큰 등록 실패: $e');
+    }
     FirebaseMessaging.instance.onTokenRefresh
         .listen((String t) => _saveToken(uid, t));
   }
 
+  /// fcmTokens 배열에 토큰을 추가한다.
+  /// merge + arrayUnion이라 필드가 없으면 새로 만들고, 이미 있으면 중복 없이 덧붙인다.
   static Future<void> _saveToken(String uid, String token) async {
-    await FirebaseFirestore.instance.collection('users').doc(uid).set(
-      <String, dynamic>{
-        'fcmTokens': FieldValue.arrayUnion(<String>[token]),
-      },
-      SetOptions(merge: true),
-    );
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set(
+        <String, dynamic>{
+          'fcmTokens': FieldValue.arrayUnion(<String>[token]),
+        },
+        SetOptions(merge: true),
+      );
+      debugPrint('FCM 토큰 등록 완료: ${token.substring(0, 12)}...');
+    } catch (e) {
+      // 보안 규칙 위반(권한)·오프라인 등. 푸시만 못 받을 뿐 앱 사용은 계속 가능해야 한다.
+      debugPrint('fcmTokens 저장 실패: $e');
+    }
   }
 
   /// 로그아웃 시 현재 기기 토큰을 제거해 이후 푸시 수신을 막는다.
+  /// 실패해도 로그아웃 자체는 진행되어야 하므로 예외를 삼키고 로그만 남긴다.
   static Future<void> unregisterToken(String uid) async {
-    final String? token = await FirebaseMessaging.instance.getToken();
-    if (token == null) return;
-    await FirebaseFirestore.instance.collection('users').doc(uid).set(
-      <String, dynamic>{
-        'fcmTokens': FieldValue.arrayRemove(<String>[token]),
-      },
-      SetOptions(merge: true),
-    );
+    try {
+      final String? token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return;
+      await FirebaseFirestore.instance.collection('users').doc(uid).set(
+        <String, dynamic>{
+          'fcmTokens': FieldValue.arrayRemove(<String>[token]),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      debugPrint('fcmTokens 제거 실패: $e');
+    }
   }
 }
