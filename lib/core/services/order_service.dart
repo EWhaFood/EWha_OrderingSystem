@@ -66,6 +66,48 @@ class OrderService {
     }
   }
 
+  /// 상태를 변경한다. 두 운영자가 동시에 처리해도 어긋나지 않도록 트랜잭션 안에서
+  /// 최신 상태를 다시 읽어 전이 규칙(OrderStatus.canTransitionTo)을 검증한다.
+  static Future<void> changeStatus({
+    required String orderId,
+    required OrderStatus next,
+    required String uid,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> ref =
+        _db.collection('orders').doc(orderId);
+    await _db.runTransaction((Transaction tx) async {
+      final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(ref);
+      if (!snap.exists) throw OrderSubmitException('발주를 찾을 수 없습니다.');
+      final OrderStatus current =
+          OrderStatus.fromCode(snap.data()?['status'] as String? ?? 'new');
+      if (current == next) return;
+      if (!current.canTransitionTo(next)) {
+        throw OrderSubmitException(
+            '${current.operatorLabel} → ${next.operatorLabel} 상태로는 바꿀 수 없습니다. '
+            '다른 담당자가 먼저 처리했을 수 있으니 새로고침 후 확인해주세요.');
+      }
+      tx.update(ref, <String, dynamic>{
+        'status': next.code,
+        'history': FieldValue.arrayUnion(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'status': next.code,
+            'byUid': uid,
+            'at': Timestamp.now(),
+          },
+        ]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  /// 운영자 전용 내부 메모 저장. 거래처에게는 보이지 않는다.
+  static Future<void> saveInternalMemo(String orderId, String memo) async {
+    await _db.collection('orders').doc(orderId).update(<String, dynamic>{
+      'internalMemo': memo.trim().isEmpty ? null : memo.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// 발주를 저장하고 발주번호를 돌려준다.
   static Future<String> submit({
     required String uid,

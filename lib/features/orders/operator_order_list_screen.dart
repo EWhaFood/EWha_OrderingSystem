@@ -5,6 +5,7 @@ import '../../core/constants/order_status.dart';
 import '../../core/models/order.dart' as model;
 import '../../core/services/auth_service.dart';
 import '../../core/utils/format.dart';
+import 'operator_order_detail_screen.dart';
 import 'widgets/order_badges.dart';
 
 /// 운영자 홈. 앱·카페24 모든 채널의 발주를 한 목록에서 실시간으로 본다.
@@ -237,10 +238,13 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
     return o.items.length > 1 ? '$first 외 ${o.items.length - 1}건' : first;
   }
 
-  /// 발주 상세·상태 변경은 EWOS-14에서 연결한다.
   void _openDetail(model.Order o) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${o.orderNo} — 상세 화면은 EWOS-14에서 연결됩니다')),
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            OperatorOrderDetailScreen(uid: widget.uid, orderId: o.id),
+      ),
     );
   }
 }
