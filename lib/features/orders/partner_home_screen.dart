@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/partner.dart';
+import '../settings/partner_settings_screen.dart';
 import 'order_form_screen.dart';
 import 'order_history_screen.dart';
 
@@ -43,6 +44,7 @@ class _PartnerHomeState extends State<PartnerHome> {
         children: <Widget>[
           OrderFormScreen(uid: widget.uid, partner: widget.partner),
           OrderHistoryScreen(uid: widget.uid, partnerId: widget.partner.id),
+          PartnerSettingsScreen(uid: widget.uid, partner: widget.partner),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -53,6 +55,8 @@ class _PartnerHomeState extends State<PartnerHome> {
               icon: Icon(Icons.add_shopping_cart_outlined), label: '발주 등록'),
           NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined), label: '내역'),
+          NavigationDestination(
+              icon: Icon(Icons.settings_outlined), label: '설정'),
         ],
       ),
     );

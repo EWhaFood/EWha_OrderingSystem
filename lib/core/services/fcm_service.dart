@@ -113,6 +113,34 @@ class FcmService {
     }
   }
 
+  /// 이 기기가 알림 대상인지(users.fcmTokens에 현재 기기 토큰이 있는지) 확인한다.
+  /// 설정 화면의 알림 토글 초기 상태로 쓴다.
+  static Future<bool> isEnabled(String uid) async {
+    try {
+      final String? token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return false;
+      final DocumentSnapshot<Map<String, dynamic>> snap =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final List<String> tokens =
+          (snap.data()?['fcmTokens'] as List<dynamic>?)?.cast<String>() ??
+              <String>[];
+      return tokens.contains(token);
+    } catch (e) {
+      debugPrint('알림 상태 조회 실패: $e');
+      return false;
+    }
+  }
+
+  /// 이 기기의 알림 수신을 켜고 끈다(토큰 등록/제거).
+  static Future<void> setEnabled(String uid, bool enabled) async {
+    if (enabled) {
+      final String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null) await _saveToken(uid, token);
+    } else {
+      await unregisterToken(uid);
+    }
+  }
+
   /// 로그아웃 시 현재 기기 토큰을 제거해 이후 푸시 수신을 막는다.
   /// 실패해도 로그아웃 자체는 진행되어야 하므로 예외를 삼키고 로그만 남긴다.
   static Future<void> unregisterToken(String uid) async {

@@ -51,14 +51,18 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
-    // 운영자만 write. 해당 거래처 본인은 자기 문서 read.
+    // 운영자만 write. 해당 거래처 본인은 자기 문서 read + 자기 배송지(addresses)만 수정.
     // 생성 시 거래처명(필수)·active 형태를 검증한다. 삭제는 도메인상 없음(비활성화로 대체).
     match /partners/{partnerId} {
       allow read: if isOperator() || (isSignedIn() && myPartnerId() == partnerId);
       allow create: if isOperator() &&
         isNonEmptyString(request.resource.data.name) &&
         request.resource.data.active is bool;
-      allow update: if isOperator();
+      // 거래처 본인은 addresses 필드만 바꿀 수 있다(active·cafe24MemberId 등 변조 차단).
+      allow update: if isOperator() ||
+        (isSignedIn() && myPartnerId() == partnerId &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['addresses']) &&
+         request.resource.data.addresses is list);
       allow delete: if false;
     }
 
