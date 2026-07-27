@@ -8,6 +8,9 @@ initializeApp();
 // 발주 알림 FCM 트리거 (EWOS-16)
 export {onOrderCreated, onOrderStatusChanged} from "./notifications";
 
+// 초대 코드 발급·가입 (EWOS-24)
+export {issueInvite, redeemInvite} from "./invites";
+
 // 이후 추가 예정:
 // - cafe24OAuthCallback / refreshToken: 카페24 인증 (EWOS-19)
 // - cafe24OrderWebhook: 주문 웹훅 수신·정규화 (EWOS-21)

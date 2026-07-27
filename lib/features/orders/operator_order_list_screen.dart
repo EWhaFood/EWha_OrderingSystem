@@ -5,6 +5,7 @@ import '../../core/constants/order_status.dart';
 import '../../core/models/order.dart' as model;
 import '../../core/services/auth_service.dart';
 import '../../core/utils/format.dart';
+import '../partners/partner_management_screen.dart';
 import 'operator_order_detail_screen.dart';
 import 'widgets/order_badges.dart';
 
@@ -84,6 +85,17 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
       appBar: AppBar(
         title: const Text('발주 현황'),
         actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.store_outlined),
+            tooltip: '거래처 관리',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (BuildContext context) =>
+                    const PartnerManagementScreen(),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => logout(widget.uid),

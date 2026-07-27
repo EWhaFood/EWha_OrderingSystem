@@ -55,6 +55,13 @@ service cloud.firestore {
       allow update, delete: if isOperator();
     }
 
+    // 초대 코드: 운영자는 현재 코드 조회만 가능. 발급·소진은 Functions(Admin) 전용이라
+    // 클라이언트 write는 막는다(코드 위조·무단 소진 방지). 가입 검증도 미인증이라 Functions가 처리.
+    match /inviteCodes/{code} {
+      allow read: if isOperator();
+      allow write: if false;
+    }
+
     // 카페24 토큰 등 시크릿: 클라이언트 접근 전면 금지 (Functions Admin SDK 전용).
     match /secrets/{doc} {
       allow read, write: if false;
