@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'signup_screen.dart';
+
 /// 운영자·거래처 공통 로그인 화면. 로그인 성공 후 라우팅은 AuthGate가 role로 분기한다.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -62,6 +64,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _goToSignup() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const SignupScreen()),
+    );
+  }
+
   String _messageFor(String code) {
     switch (code) {
       case 'invalid-email':
@@ -102,6 +110,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextButton(
                   onPressed: _loading ? null : _resetPassword,
                   child: const Text('비밀번호를 잊으셨나요?'),
+                ),
+                const Divider(height: 24),
+                OutlinedButton(
+                  onPressed: _loading ? null : _goToSignup,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text('초대 코드로 가입'),
                 ),
               ],
             ),
