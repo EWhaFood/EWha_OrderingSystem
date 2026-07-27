@@ -11,6 +11,10 @@ export {onOrderCreated, onOrderStatusChanged} from "./notifications";
 // 초대 코드 발급·가입 (EWOS-24)
 export {issueInvite, redeemInvite} from "./invites";
 
-// 이후 추가 예정:
-// - cafe24OAuthCallback / refreshToken: 카페24 인증 (EWOS-19)
-// - cafe24OrderWebhook: 주문 웹훅 수신·정규화 (EWOS-21)
+// 카페24 OAuth 콜백·토큰 갱신·웹훅 수신 (EWOS-19, 웹훅 정규화는 EWOS-21에서)
+export {
+  cafe24Install,
+  cafe24OAuthCallback,
+  refreshCafe24Tokens,
+  cafe24Webhook,
+} from "./cafe24";
