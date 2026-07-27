@@ -144,6 +144,9 @@ export const refreshCafe24Tokens = onSchedule(
         await refreshOne(data.mallId as string, data.refreshToken as string);
       } catch (e) {
         logger.error(`토큰 갱신 실패: ${data.mallId}`, e);
+        // 갱신 실패(대개 refresh token 2주 만료) → 연동 끊김으로 표시해
+        // 운영자 상품관리 화면에 경고가 뜨게 한다. 재인증(앱 재설치) 필요.
+        await writeStatus(data.mallId as string, {connected: false});
       }
     }
   }
