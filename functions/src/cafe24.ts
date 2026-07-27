@@ -1,8 +1,9 @@
-import {onRequest} from "firebase-functions/v2/https";
+import {onRequest, onCall, CallableRequest} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {defineSecret} from "firebase-functions/params";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
+import {assertOperator} from "./invites";
 
 // Client ID/Secret은 코드·저장소에 두지 않는다.
 // 발주처가 `firebase functions:secrets:set CAFE24_CLIENT_ID` 등으로 등록한다.
@@ -22,16 +23,32 @@ function basicAuth(): string {
   return `Basic ${Buffer.from(raw).toString("base64")}`;
 }
 
+/**
+ * 운영자에게 보여줄 연동 상태를 cafe24Status/{mallId}에 남긴다.
+ * 토큰 등 시크릿은 secrets(차단)에만 두고, 여기엔 노출해도 되는 요약만 쓴다.
+ */
+async function writeStatus(
+  mallId: string, patch: Record<string, unknown>,
+): Promise<void> {
+  await getFirestore().collection("cafe24Status").doc(mallId).set(
+    {mallId, ...patch, updatedAt: FieldValue.serverTimestamp()},
+    {merge: true},
+  );
+}
+
 /** 토큰 응답을 secrets/cafe24_{mallId}에 저장한다(규칙상 클라이언트 접근 불가). */
 async function saveToken(mallId: string, t: Cafe24Token): Promise<void> {
+  const accessExpiresAt = Timestamp.fromDate(new Date(t.expires_at));
   await getFirestore().collection("secrets").doc(`cafe24_${mallId}`).set({
     mallId,
     accessToken: t.access_token,
     refreshToken: t.refresh_token,
-    accessExpiresAt: Timestamp.fromDate(new Date(t.expires_at)),
+    accessExpiresAt,
     refreshExpiresAt: Timestamp.fromDate(new Date(t.refresh_token_expires_at)),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  // 연동 정상·만료 시각을 운영자 화면용 상태 문서에 반영한다.
+  await writeStatus(mallId, {connected: true, accessExpiresAt});
 }
 
 const SCOPE = "mall.read_order,mall.read_product";
@@ -307,6 +324,7 @@ async function pollOrdersForMall(
   }
   await getFirestore().collection("secrets").doc(`cafe24_${mallId}`)
     .set({lastOrderSync: Timestamp.fromMillis(now)}, {merge: true});
+  await writeStatus(mallId, {lastOrderSync: Timestamp.fromMillis(now)});
   if (inserted > 0) logger.info(`카페24 주문 적재: ${mallId} +${inserted}건`);
 }
 
@@ -331,6 +349,107 @@ export const pollCafe24Orders = onSchedule(
         logger.error(`카페24 주문 폴링 실패: ${data.mallId}`, e);
       }
     }
+  }
+);
+
+// ---- 상품 동기화 (EWOS-22) ----
+// 카페24 상품을 products 컬렉션으로 복제한다. 앱은 products만 읽고 카페24를 직접 부르지 않는다.
+
+interface Cafe24Product {
+  product_no?: number;
+  product_name?: string;
+  price?: number | string;
+  list_image?: string;
+}
+
+/** 상품 한 페이지 조회. */
+async function fetchProductsPage(
+  mallId: string, token: string, offset: number,
+): Promise<Cafe24Product[]> {
+  const qs = new URLSearchParams({
+    limit: String(PAGE_SIZE), offset: String(offset),
+  });
+  const resp = await fetch(
+    `https://${mallId}.cafe24api.com/api/v2/admin/products?${qs.toString()}`,
+    {headers: {
+      "Authorization": `Bearer ${token}`,
+      "X-Cafe24-Api-Version": API_VERSION,
+    }},
+  );
+  if (!resp.ok) throw new Error(`상품 조회 ${resp.status}: ${await resp.text()}`);
+  const json = (await resp.json()) as {products?: Cafe24Product[]};
+  return json.products ?? [];
+}
+
+/**
+ * product_no 기준 결정적 ID로 upsert한다. enabled(발주 가능 여부)는 운영자가 관리하므로
+ * 신규 문서에만 true로 넣고, 기존 문서 동기화 시에는 절대 덮어쓰지 않는다.
+ */
+async function upsertProducts(
+  mallId: string, products: Cafe24Product[],
+): Promise<number> {
+  const db = getFirestore();
+  let count = 0;
+  for (const p of products) {
+    if (p.product_no == null) continue;
+    const ref = db.collection("products").doc(`cafe24_${mallId}_${p.product_no}`);
+    const fields = {
+      name: p.product_name ?? "",
+      price: Math.round(Number(p.price ?? 0)),
+      cafe24ProductNo: String(p.product_no),
+      imageUrl: p.list_image ?? null,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    try {
+      await ref.create({...fields, enabled: true});
+    } catch (e) {
+      if ((e as {code?: number}).code !== 6) throw e;
+      await ref.update(fields); // 기존 문서: enabled 보존
+    }
+    count++;
+  }
+  return count;
+}
+
+/** 한 몰의 전체 상품을 페이지네이션으로 동기화하고 상태에 시각을 남긴다. */
+async function syncProductsForMall(mallId: string): Promise<number> {
+  const token = await ensureAccessToken(mallId);
+  if (!token) return 0;
+  let offset = 0;
+  let total = 0;
+  for (;;) {
+    const page = await fetchProductsPage(mallId, token, offset);
+    if (page.length === 0) break;
+    total += await upsertProducts(mallId, page);
+    if (page.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  await writeStatus(mallId, {
+    lastProductSync: FieldValue.serverTimestamp(), productCount: total,
+  });
+  return total;
+}
+
+/**
+ * 상품 수동 동기화 (EWOS-22, 운영자 전용). 등록된 모든 몰의 상품을 products로 복제한다.
+ * 반환값으로 몰 수·상품 수를 돌려줘 운영자 화면이 결과를 안내한다.
+ */
+export const syncCafe24Products = onCall(
+  {secrets: [CLIENT_ID, CLIENT_SECRET]},
+  async (req: CallableRequest) => {
+    await assertOperator(req);
+    const db = getFirestore();
+    const snap = await db.collection("secrets").get();
+    let malls = 0;
+    let products = 0;
+    for (const doc of snap.docs) {
+      const mallId = doc.data().mallId as string | undefined;
+      if (!mallId) continue;
+      malls++;
+      products += await syncProductsForMall(mallId);
+    }
+    logger.info(`카페24 상품 동기화: ${malls}몰 ${products}건`);
+    return {malls, products};
   }
 );
 
