@@ -11,11 +11,12 @@ export {onOrderCreated, onOrderStatusChanged} from "./notifications";
 // 초대 코드 발급·가입 (EWOS-24)
 export {issueInvite, redeemInvite} from "./invites";
 
-// 카페24 OAuth 콜백·토큰 갱신·웹훅 수신 (EWOS-19) + 주문 폴링 (EWOS-21)
+// 카페24 OAuth·토큰 갱신·웹훅 (EWOS-19) + 주문 폴링 (EWOS-21) + 상품 동기화 (EWOS-22)
 export {
   cafe24Install,
   cafe24OAuthCallback,
   refreshCafe24Tokens,
   cafe24Webhook,
   pollCafe24Orders,
+  syncCafe24Products,
 } from "./cafe24";

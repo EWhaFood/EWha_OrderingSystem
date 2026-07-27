@@ -66,5 +66,12 @@ service cloud.firestore {
     match /secrets/{doc} {
       allow read, write: if false;
     }
+
+    // 카페24 연동 상태(연결 여부·토큰 만료·동기화 시각). 시크릿은 없고 요약만 담긴다.
+    // 운영자 상태 화면에서 read, 기록은 Functions 전용이라 write는 막는다.
+    match /cafe24Status/{mallId} {
+      allow read: if isOperator();
+      allow write: if false;
+    }
   }
 }

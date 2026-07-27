@@ -13,7 +13,7 @@ function makeCode(partnerId: string): string {
 }
 
 /** 호출자가 운영자인지 확인한다. role 위조를 막기 위해 서버에서 users 문서를 직접 읽는다. */
-async function assertOperator(req: CallableRequest): Promise<void> {
+export async function assertOperator(req: CallableRequest): Promise<void> {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
   const doc = await getFirestore().collection("users").doc(uid).get();
