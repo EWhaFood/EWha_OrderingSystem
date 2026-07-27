@@ -132,7 +132,10 @@ export const refreshCafe24Tokens = onSchedule(
   }
 );
 
-async function refreshOne(mallId: string, refreshToken: string): Promise<void> {
+async function refreshOne(
+  mallId: string,
+  refreshToken: string,
+): Promise<Cafe24Token> {
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: refreshToken,
@@ -149,18 +152,195 @@ async function refreshOne(mallId: string, refreshToken: string): Promise<void> {
     }
   );
   if (!resp.ok) throw new Error(`refresh ${resp.status}`);
-  await saveToken(mallId, (await resp.json()) as Cafe24Token);
+  const token = (await resp.json()) as Cafe24Token;
+  await saveToken(mallId, token);
+  return token;
+}
+
+// ---- 주문 폴링 (EWOS-21) ----
+// 카페24는 주문 웹훅을 제공하지 않아, 스케줄러로 Admin API를 주기 조회해 적재한다.
+
+// Admin API 요구 버전(날짜형). 카페24가 버전을 올리면 여기만 수정한다.
+const API_VERSION = "2024-06-01";
+
+// 한 번에 조회할 주문 수(카페24 orders 최대 limit).
+const PAGE_SIZE = 100;
+
+interface Cafe24Item {
+  product_no?: number;
+  product_name?: string;
+  quantity?: number | string;
+  product_price?: number | string;
+}
+
+interface Cafe24Order {
+  order_id: string;
+  order_date?: string;
+  member_id?: string;
+  billing_name?: string;
+  items?: Cafe24Item[];
+}
+
+interface PartnerRef {
+  id: string;
+  name: string;
+}
+
+/** 저장된 토큰을 읽고, 만료 임박(5분 이내)이면 갱신해 유효한 access token을 돌려준다. */
+async function ensureAccessToken(mallId: string): Promise<string | null> {
+  const snap = await getFirestore()
+    .collection("secrets").doc(`cafe24_${mallId}`).get();
+  const data = snap.data();
+  if (!data?.accessToken || !data?.refreshToken) return null;
+  const exp = (data.accessExpiresAt as Timestamp | undefined)?.toMillis() ?? 0;
+  if (exp - Date.now() > 5 * 60 * 1000) return data.accessToken as string;
+  const refreshed = await refreshOne(mallId, data.refreshToken as string);
+  return refreshed.access_token;
+}
+
+/** cafe24MemberId가 등록된 거래처를 회원ID→거래처 맵으로 만든다. */
+async function loadPartnerMap(): Promise<Map<string, PartnerRef>> {
+  const snap = await getFirestore()
+    .collection("partners").where("cafe24MemberId", "!=", null).get();
+  const map = new Map<string, PartnerRef>();
+  for (const doc of snap.docs) {
+    const memberId = doc.data().cafe24MemberId as string | undefined;
+    if (memberId) map.set(memberId, {id: doc.id, name: doc.data().name ?? ""});
+  }
+  return map;
+}
+
+/** UTC ms를 카페24 조회용 KST 날짜(yyyy-mm-dd)로 변환한다. */
+function kstDate(ms: number): string {
+  return new Date(ms + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** 주문 한 페이지 조회. embed=items로 품목까지 함께 받는다. */
+async function fetchOrdersPage(
+  mallId: string, token: string,
+  startDate: string, endDate: string, offset: number,
+): Promise<Cafe24Order[]> {
+  const qs = new URLSearchParams({
+    start_date: startDate, end_date: endDate,
+    limit: String(PAGE_SIZE), offset: String(offset), embed: "items",
+  });
+  const resp = await fetch(
+    `https://${mallId}.cafe24api.com/api/v2/admin/orders?${qs.toString()}`,
+    {headers: {
+      "Authorization": `Bearer ${token}`,
+      "X-Cafe24-Api-Version": API_VERSION,
+    }},
+  );
+  if (!resp.ok) throw new Error(`주문 조회 ${resp.status}: ${await resp.text()}`);
+  const json = (await resp.json()) as {orders?: Cafe24Order[]};
+  return json.orders ?? [];
+}
+
+/** 카페24 주문을 공통 orders 스키마로 변환한다. member_id로 거래처를 매핑한다. */
+function normalizeOrder(
+  o: Cafe24Order, partners: Map<string, PartnerRef>,
+): Record<string, unknown> {
+  const items = (o.items ?? []).map((it) => {
+    const qty = Number(it.quantity ?? 0);
+    const unitPrice = Math.round(Number(it.product_price ?? 0));
+    return {
+      productId: String(it.product_no ?? ""),
+      name: it.product_name ?? "",
+      qty, unitPrice, amount: qty * unitPrice,
+    };
+  });
+  const totalAmount = items.reduce((sum, it) => sum + it.amount, 0);
+  const partner = o.member_id ? partners.get(o.member_id) : undefined;
+  return {
+    orderNo: o.order_id,
+    source: "cafe24",
+    status: "new",
+    items, totalAmount,
+    // 미매핑 주문은 partnerId=null → 운영자에게 "미분류"로 표시된다.
+    partnerId: partner?.id ?? null,
+    partnerName: partner?.name ?? o.billing_name ?? null,
+    cafe24OrderId: o.order_id,
+    history: [{status: "new", byUid: "system", at: Timestamp.now()}],
+    createdAt: o.order_date ?
+      Timestamp.fromDate(new Date(o.order_date)) :
+      FieldValue.serverTimestamp(),
+  };
+}
+
+/** order_id 기준 결정적 문서 ID로 최초 1회만 적재한다(운영자 상태변경 보존). */
+async function upsertOrders(
+  mallId: string, orders: Cafe24Order[], partners: Map<string, PartnerRef>,
+): Promise<number> {
+  const db = getFirestore();
+  let inserted = 0;
+  for (const o of orders) {
+    const ref = db.collection("orders").doc(`cafe24_${mallId}_${o.order_id}`);
+    try {
+      await ref.create(normalizeOrder(o, partners));
+      inserted++;
+    } catch (e) {
+      // 이미 존재(ALREADY_EXISTS=6)하면 재적재 없이 건너뛴다.
+      if ((e as {code?: number}).code !== 6) throw e;
+    }
+  }
+  return inserted;
+}
+
+/** 한 몰의 신규 주문을 조회·적재하고 동기화 커서를 갱신한다. */
+async function pollOrdersForMall(
+  mallId: string, lastSyncMs: number, partners: Map<string, PartnerRef>,
+): Promise<void> {
+  const token = await ensureAccessToken(mallId);
+  if (!token) return;
+  const now = Date.now();
+  // 마지막 동기화 하루 전부터(장애 대비 겹침) 오늘까지. 중복은 create-only로 무해.
+  const startDate = kstDate((lastSyncMs || now) - 24 * 60 * 60 * 1000);
+  const endDate = kstDate(now);
+  let offset = 0;
+  let inserted = 0;
+  for (;;) {
+    const page = await fetchOrdersPage(mallId, token, startDate, endDate, offset);
+    if (page.length === 0) break;
+    inserted += await upsertOrders(mallId, page, partners);
+    if (page.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  await getFirestore().collection("secrets").doc(`cafe24_${mallId}`)
+    .set({lastOrderSync: Timestamp.fromMillis(now)}, {merge: true});
+  if (inserted > 0) logger.info(`카페24 주문 적재: ${mallId} +${inserted}건`);
 }
 
 /**
- * 웹훅 수신 (주문 접수/상품 수정). 지금은 수신·로깅만 하고,
- * 주문 정규화 → orders 적재는 EWOS-21/22에서 구현한다.
+ * 카페24 주문 폴링 (EWOS-21). 웹훅 미제공이라 10분마다 조회해 orders에 적재한다.
+ * 신규 적재분은 onOrderCreated 트리거가 운영자에게 자동 푸시한다.
+ */
+export const pollCafe24Orders = onSchedule(
+  {schedule: "every 10 minutes", secrets: [CLIENT_ID, CLIENT_SECRET]},
+  async () => {
+    const db = getFirestore();
+    const partners = await loadPartnerMap();
+    const snap = await db.collection("secrets").get();
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      if (!data.mallId) continue;
+      const lastSync =
+        (data.lastOrderSync as Timestamp | undefined)?.toMillis() ?? 0;
+      try {
+        await pollOrdersForMall(data.mallId as string, lastSync, partners);
+      } catch (e) {
+        logger.error(`카페24 주문 폴링 실패: ${data.mallId}`, e);
+      }
+    }
+  }
+);
+
+/**
+ * 웹훅 수신 (상품 수정 등). 주문 수집은 웹훅 미제공이라 pollCafe24Orders가 담당한다.
  */
 export const cafe24Webhook = onRequest(async (req, res) => {
   logger.info("cafe24 webhook 수신", {
     event: req.get("X-Cafe24-Webhook-Event"),
     body: req.body,
   });
-  // TODO(EWOS-21): HMAC 서명 검증 + 주문 상세 조회 + 공통 스키마 정규화 → orders
   res.status(200).send("ok");
 });
