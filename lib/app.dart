@@ -8,7 +8,7 @@ import 'core/services/auth_service.dart';
 import 'core/services/fcm_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/orders/operator_order_list_screen.dart';
-import 'features/orders/order_form_screen.dart';
+import 'features/orders/partner_home_screen.dart';
 
 class EwhaOrderingApp extends StatelessWidget {
   const EwhaOrderingApp({super.key});
@@ -116,7 +116,7 @@ class _PartnerGate extends StatelessWidget {
           return _BlockedScreen(
               uid: uid, message: '비활성화된 거래처 계정입니다. 관리자에게 문의하세요.');
         }
-        return OrderFormScreen(uid: uid, partner: partner);
+        return PartnerHome(uid: uid, partner: partner);
       },
     );
   }
