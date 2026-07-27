@@ -1,7 +1,9 @@
 rules_version = '2';
 
-// EWOS-9 보안 규칙 초안. 개발 초기부터 최소 접근 제어를 건다.
-// EWOS-29에서 스키마 유효성 검증까지 보강해 최종화한다.
+// EWOS-9 접근 제어 + EWOS-29 스키마 유효성 검증.
+// 접근 제어(누가)에 더해, 클라이언트가 쓰는 문서의 형태(무엇을)까지 검증한다.
+// 카페24 주문·상품·초대코드·토큰은 Functions(Admin SDK)가 규칙을 우회해 쓰므로
+// 여기 검증은 앱에서 직접 오는 쓰기(발주 생성, fcmTokens, 거래처/상품 관리)에만 걸린다.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -21,38 +23,60 @@ service cloud.firestore {
       return isSignedIn() ? userDoc().partnerId : null;
     }
 
-    // 본인 문서만 read. 본인이 자기 fcmTokens만 갱신하는 update는 허용하되,
+    // 길이 1 이상의 문자열인지.
+    function isNonEmptyString(v) {
+      return v is string && v.size() > 0;
+    }
+
+    // 거래처가 앱에서 생성하는 발주의 형태 검증.
+    // 접근 제어(자기 partnerId)와 별개로, 위조·오염된 문서가 들어오는 것을 막는다.
+    function isValidNewOrder() {
+      let d = request.resource.data;
+      return d.source == 'app'
+        && d.status == 'new'
+        && d.partnerId == myPartnerId()
+        && isNonEmptyString(d.orderNo)
+        && d.partnerName is string
+        && d.items is list && d.items.size() > 0
+        && d.totalAmount is int && d.totalAmount >= 0;
+    }
+
+    // 본인 문서만 read. 본인이 자기 fcmTokens(문자열 리스트)만 갱신하는 update는 허용하되,
     // role·partnerId·email 등 민감 필드 변경과 create/delete는 금지(위조 방지, Functions 전용).
     match /users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
       allow update: if isSignedIn() && request.auth.uid == uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens']) &&
+        request.resource.data.fcmTokens is list;
       allow create, delete: if false;
     }
 
     // 운영자만 write. 해당 거래처 본인은 자기 문서 read.
+    // 생성 시 거래처명(필수)·active 형태를 검증한다. 삭제는 도메인상 없음(비활성화로 대체).
     match /partners/{partnerId} {
       allow read: if isOperator() || (isSignedIn() && myPartnerId() == partnerId);
-      allow write: if isOperator();
+      allow create: if isOperator() &&
+        isNonEmptyString(request.resource.data.name) &&
+        request.resource.data.active is bool;
+      allow update: if isOperator();
+      allow delete: if false;
     }
 
-    // 로그인 사용자 read, 운영자만 write.
+    // 로그인 사용자 read, 운영자만 write. 발주 가능 여부(enabled)는 불리언이어야 한다.
+    // 상품 본문 생성/동기화는 Functions가 하므로 앱 쓰기는 사실상 enabled 토글뿐이다.
     match /products/{productId} {
       allow read: if isSignedIn();
-      allow write: if isOperator();
+      allow write: if isOperator() && request.resource.data.enabled is bool;
     }
 
-    // 거래처는 자기 발주만 read + create(자기 partnerId·source='app'만).
-    // 상태 변경(update)은 운영자만.
+    // 거래처는 자기 발주만 read + create(형태 검증 포함).
+    // 상태 변경(update)은 운영자만, 삭제는 금지(감사 이력 보존).
     match /orders/{orderId} {
       allow read: if isOperator() ||
         (isSignedIn() && resource.data.partnerId == myPartnerId());
-      allow create: if isOperator() ||
-        (isSignedIn() &&
-         request.resource.data.partnerId == myPartnerId() &&
-         request.resource.data.source == 'app' &&
-         request.resource.data.status == 'new');
-      allow update, delete: if isOperator();
+      allow create: if isOperator() || (isSignedIn() && isValidNewOrder());
+      allow update: if isOperator();
+      allow delete: if false;
     }
 
     // 초대 코드: 운영자는 현재 코드 조회만 가능. 발급·소진은 Functions(Admin) 전용이라
