@@ -57,15 +57,21 @@ export const issueInvite = onCall(async (req: CallableRequest) => {
 /**
  * 초대 코드로 거래처 가입 (미인증 호출 허용).
  * 코드 검증 → Auth 계정 생성 → users 문서(role='partner') → 코드 소진.
- * role은 이 함수에서만 설정하므로 클라이언트가 권한을 위조할 수 없다.
+ * validateOnly가 true이면 검증만 하고 가입은 진행하지 않는다.
  */
 export const redeemInvite = onCall(async (req: CallableRequest) => {
   const code = (req.data?.code ?? "") as string;
   const email = (req.data?.email ?? "") as string;
   const password = (req.data?.password ?? "") as string;
-  if (!code || !email || !password) {
-    throw new HttpsError("invalid-argument", "코드·이메일·비밀번호가 필요합니다.");
+  const validateOnly = (req.data?.validateOnly ?? false) as boolean;
+
+  if (!code) {
+    throw new HttpsError("invalid-argument", "코드가 필요합니다.");
   }
+  if (!validateOnly && (!email || !password)) {
+    throw new HttpsError("invalid-argument", "이메일과 비밀번호가 필요합니다.");
+  }
+
   const db = getFirestore();
   const ref = db.collection("inviteCodes").doc(code);
 
@@ -78,9 +84,18 @@ export const redeemInvite = onCall(async (req: CallableRequest) => {
     if ((data.expiresAt as Timestamp).toMillis() < Date.now()) {
       throw new HttpsError("deadline-exceeded", "만료된 코드입니다.");
     }
-    tx.update(ref, {usedAt: FieldValue.serverTimestamp(), usedEmail: email});
+
+    // 검증만 하는 경우에는 DB를 업데이트하지 않는다.
+    if (!validateOnly) {
+      tx.update(ref, {usedAt: FieldValue.serverTimestamp(), usedEmail: email});
+    }
     return {partnerId: data.partnerId as string, partnerName: data.partnerName as string};
   });
+
+  // 검증만 하는 경우 여기서 종료
+  if (validateOnly) {
+    return {partnerName: info.partnerName};
+  }
 
   let uid: string;
   try {

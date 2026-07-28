@@ -40,4 +40,17 @@ class InviteService {
     final Map<dynamic, dynamic> data = result.data as Map<dynamic, dynamic>;
     return data['partnerName'] as String? ?? '';
   }
+
+  /// 초대 코드의 유효성을 미리 확인하고 연결된 거래처명을 가져온다.
+  /// IAM 권한 문제를 피하기 위해 이미 잘 작동하는 redeemInvite 함수를 검증 모드로 호출한다.
+  static Future<String> check(String code) async {
+    final HttpsCallable callable = _fns.httpsCallable('redeemInvite');
+    final HttpsCallableResult<dynamic> result =
+        await callable.call<dynamic>(<String, dynamic>{
+      'code': code,
+      'validateOnly': true,
+    });
+    final Map<dynamic, dynamic> data = result.data as Map<dynamic, dynamic>;
+    return data['partnerName'] as String? ?? '';
+  }
 }
