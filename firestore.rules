@@ -83,6 +83,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 발주 즐겨찾기: 거래처가 자주 넣는 품목 묶음. 거래처 본인 것만 다룰 수 있다.
+    // read는 운영자 또는 본인, create/update/delete는 본인만(역할 격리).
+    // create 시 partnerId 위조 방지 + name 비어있지 않음 + items가 리스트인지 검증한다.
+    match /favorites/{favId} {
+      allow read: if isOperator() ||
+        (isSignedIn() && resource.data.partnerId == myPartnerId());
+      allow create: if isSignedIn() &&
+        request.resource.data.partnerId == myPartnerId() &&
+        isNonEmptyString(request.resource.data.name) &&
+        request.resource.data.items is list;
+      allow update, delete: if isSignedIn() &&
+        resource.data.partnerId == myPartnerId();
+    }
+
     // 초대 코드: 운영자는 현재 코드 조회만 가능. 발급·소진은 Functions(Admin) 전용이라
     // 클라이언트 write는 막는다(코드 위조·무단 소진 방지). 가입 검증도 미인증이라 Functions가 처리.
     match /inviteCodes/{code} {

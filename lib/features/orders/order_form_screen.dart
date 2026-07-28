@@ -7,6 +7,7 @@ import '../../core/services/auth_service.dart';
 import '../../core/utils/format.dart';
 import 'cart.dart';
 import 'order_confirm_screen.dart';
+import 'widgets/favorite_sheet.dart';
 
 /// 거래처 홈 = 발주 등록 화면. 쇼핑이 아니라 반복 발주용이라 수량 입력이 중심이다.
 /// products를 실시간 구독하므로 운영자가 품목을 중지하면 즉시 목록에서 빠진다.
@@ -72,6 +73,11 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
         ),
         actions: <Widget>[
           IconButton(
+            icon: const Icon(Icons.star_outline),
+            tooltip: '즐겨찾기',
+            onPressed: _openFavorites,
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => logout(widget.uid),
           ),
@@ -132,6 +138,15 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
               _ProductRow(product: products[i]),
         );
       },
+    );
+  }
+
+  /// 즐겨찾기 시트를 연다. 저장에 필요한 상품 이름은 구독 중인 _latest에서 가져온다.
+  void _openFavorites() {
+    showFavoriteSheet(
+      context: context,
+      partnerId: widget.partner.id,
+      products: _latest,
     );
   }
 
