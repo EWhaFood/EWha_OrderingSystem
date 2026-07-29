@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/models/partner.dart';
 import '../../core/services/invite_service.dart';
+import 'address_sheet.dart';
 
 /// 운영자 거래처 관리. 거래처 등록, 초대 코드 발급, 활성/비활성을 담당한다.
 /// 삭제는 없다 — 거래 중단은 비활성화로 처리해 데이터를 보존한다.
@@ -179,19 +180,42 @@ class _PartnerTileState extends State<_PartnerTile> {
             Text('카페24 ID: ${p.cafe24MemberId}',
                 style: const TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
           const SizedBox(height: 6),
-          OutlinedButton.icon(
-            onPressed: _issuing ? null : _issueCode,
-            icon: _issuing
-                ? const SizedBox(
-                    height: 14,
-                    width: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.vpn_key_outlined, size: 16),
-            label: const Text('초대 코드 발급'),
-            style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact),
+          Row(
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: _issuing ? null : _issueCode,
+                icon: _issuing
+                    ? const SizedBox(
+                        height: 14,
+                        width: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.vpn_key_outlined, size: 16),
+                label: const Text('초대 코드 발급'),
+                style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _openAddresses,
+                icon: const Icon(Icons.local_shipping_outlined, size: 16),
+                label: Text('배송지 ${p.addresses.length}'),
+                style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openAddresses() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext context) => AddressSheet(
+        partnerId: widget.partner.id,
+        initial: widget.partner.addresses,
       ),
     );
   }

@@ -51,14 +51,18 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
-    // 운영자만 write. 해당 거래처 본인은 자기 문서 read.
+    // 운영자만 write. 해당 거래처 본인은 자기 문서 read + 자기 배송지(addresses)만 수정.
     // 생성 시 거래처명(필수)·active 형태를 검증한다. 삭제는 도메인상 없음(비활성화로 대체).
     match /partners/{partnerId} {
       allow read: if isOperator() || (isSignedIn() && myPartnerId() == partnerId);
       allow create: if isOperator() &&
         isNonEmptyString(request.resource.data.name) &&
         request.resource.data.active is bool;
-      allow update: if isOperator();
+      // 거래처 본인은 addresses 필드만 바꿀 수 있다(active·cafe24MemberId 등 변조 차단).
+      allow update: if isOperator() ||
+        (isSignedIn() && myPartnerId() == partnerId &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['addresses']) &&
+         request.resource.data.addresses is list);
       allow delete: if false;
     }
 
@@ -77,6 +81,20 @@ service cloud.firestore {
       allow create: if isOperator() || (isSignedIn() && isValidNewOrder());
       allow update: if isOperator();
       allow delete: if false;
+    }
+
+    // 발주 즐겨찾기: 거래처가 자주 넣는 품목 묶음. 거래처 본인 것만 다룰 수 있다.
+    // read는 운영자 또는 본인, create/update/delete는 본인만(역할 격리).
+    // create 시 partnerId 위조 방지 + name 비어있지 않음 + items가 리스트인지 검증한다.
+    match /favorites/{favId} {
+      allow read: if isOperator() ||
+        (isSignedIn() && resource.data.partnerId == myPartnerId());
+      allow create: if isSignedIn() &&
+        request.resource.data.partnerId == myPartnerId() &&
+        isNonEmptyString(request.resource.data.name) &&
+        request.resource.data.items is list;
+      allow update, delete: if isSignedIn() &&
+        resource.data.partnerId == myPartnerId();
     }
 
     // 초대 코드: 운영자는 현재 코드 조회만 가능. 발급·소진은 Functions(Admin) 전용이라

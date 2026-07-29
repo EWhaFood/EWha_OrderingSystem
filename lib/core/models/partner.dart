@@ -12,6 +12,14 @@ class PartnerAddress {
   final String address;
   final bool isDefault;
 
+  PartnerAddress copyWith({String? label, String? address, bool? isDefault}) {
+    return PartnerAddress(
+      label: label ?? this.label,
+      address: address ?? this.address,
+      isDefault: isDefault ?? this.isDefault,
+    );
+  }
+
   factory PartnerAddress.fromMap(Map<String, dynamic> data) {
     return PartnerAddress(
       label: data['label'] as String? ?? '',
