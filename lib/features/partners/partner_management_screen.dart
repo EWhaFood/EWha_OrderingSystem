@@ -180,7 +180,10 @@ class _PartnerTileState extends State<_PartnerTile> {
             Text('카페24 ID: ${p.cafe24MemberId}',
                 style: const TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
           const SizedBox(height: 6),
-          Row(
+          // 버튼들이 화면 가로 폭을 넘지 않도록 Wrap으로 감쌈
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: <Widget>[
               OutlinedButton.icon(
                 onPressed: _issuing ? null : _issueCode,
@@ -194,7 +197,6 @@ class _PartnerTileState extends State<_PartnerTile> {
                 style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact),
               ),
-              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: _openAddresses,
                 icon: const Icon(Icons.local_shipping_outlined, size: 16),
@@ -202,10 +204,27 @@ class _PartnerTileState extends State<_PartnerTile> {
                 style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact),
               ),
+              // [신규] 명세서 정책에 따라 운영자용 정보 수정 버튼 추가
+              OutlinedButton.icon(
+                onPressed: () => _openEditForm(context),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('정보 수정'),
+                style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact),
+              ),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  // 거래처 정보 수정 폼을 바텀 시트로 엶
+  Future<void> _openEditForm(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext context) => _PartnerForm(partner: widget.partner),
     );
   }
 
@@ -221,19 +240,25 @@ class _PartnerTileState extends State<_PartnerTile> {
   }
 }
 
-/// 거래처 등록 폼. 거래처명만 필수, 나머지는 선택.
+/// 거래처 등록/수정 폼. 거래처명만 필수, 나머지는 선택.
 class _PartnerForm extends StatefulWidget {
-  const _PartnerForm();
+  const _PartnerForm({this.partner});
+
+  final Partner? partner;
 
   @override
   State<_PartnerForm> createState() => _PartnerFormState();
 }
 
 class _PartnerFormState extends State<_PartnerForm> {
-  final TextEditingController _name = TextEditingController();
-  final TextEditingController _manager = TextEditingController();
-  final TextEditingController _phone = TextEditingController();
-  final TextEditingController _cafe24 = TextEditingController();
+  late final TextEditingController _name =
+      TextEditingController(text: widget.partner?.name);
+  late final TextEditingController _manager =
+      TextEditingController(text: widget.partner?.manager);
+  late final TextEditingController _phone =
+      TextEditingController(text: widget.partner?.phone);
+  late final TextEditingController _cafe24 =
+      TextEditingController(text: widget.partner?.cafe24MemberId);
   bool _saving = false;
 
   @override
@@ -250,21 +275,34 @@ class _PartnerFormState extends State<_PartnerForm> {
     if (name.isEmpty) return;
     setState(() => _saving = true);
     try {
-      await FirebaseFirestore.instance.collection('partners').add(<String, dynamic>{
+      final Map<String, dynamic> data = <String, dynamic>{
         'name': name,
         'manager': _manager.text.trim().isEmpty ? null : _manager.text.trim(),
         'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         'cafe24MemberId':
             _cafe24.text.trim().isEmpty ? null : _cafe24.text.trim(),
-        'active': true,
-        'addresses': <dynamic>[],
-      });
+      };
+
+      if (widget.partner != null) {
+        await FirebaseFirestore.instance
+            .collection('partners')
+            .doc(widget.partner!.id)
+            .update(data);
+      } else {
+        await FirebaseFirestore.instance
+            .collection('partners')
+            .add(<String, dynamic>{
+          ...data,
+          'active': true,
+          'addresses': <dynamic>[],
+        });
+      }
       if (mounted) Navigator.pop(context);
     } catch (_) {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('등록에 실패했습니다')));
+            SnackBar(content: Text(widget.partner == null ? '등록에 실패했습니다' : '수정에 실패했습니다')));
       }
     }
   }
@@ -278,8 +316,8 @@ class _PartnerFormState extends State<_PartnerForm> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const Text('거래처 등록',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+          Text(widget.partner == null ? '거래처 등록' : '거래처 정보 수정',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
           const SizedBox(height: 12),
           _field(_name, '거래처명 *'),
           _field(_manager, '담당자'),
@@ -297,7 +335,7 @@ class _PartnerFormState extends State<_PartnerForm> {
                     width: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
-                : const Text('등록'),
+                : Text(widget.partner == null ? '등록' : '저장'),
           ),
         ],
       ),

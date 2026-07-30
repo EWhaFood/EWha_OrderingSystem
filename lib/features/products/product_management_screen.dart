@@ -19,6 +19,9 @@ class ProductManagementScreen extends StatefulWidget {
 
 class _ProductManagementScreenState extends State<ProductManagementScreen> {
   bool _syncing = false;
+  String _searchQuery = '';
+  bool _showDisabledOnly = false;
+  bool _sortByName = true;
 
   Future<void> _sync() async {
     setState(() => _syncing = true);
@@ -36,7 +39,16 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    String displayMsg = msg;
+    // 영어 에러 메시지를 사용자 친화적인 한글로 변경
+    if (msg.contains('INTERNAL')) {
+      displayMsg = '서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+    } else if (msg.contains('not-found')) {
+      displayMsg = '관련 정보를 찾을 수 없습니다.';
+    } else if (msg.contains('permission-denied')) {
+      displayMsg = '권한이 없습니다.';
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(displayMsg)));
   }
 
   @override
@@ -61,15 +73,60 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         children: <Widget>[
           const _StatusSection(),
           const Divider(height: 1),
+          _buildSearchAndFilter(), // [신규] 명세서에 따른 검색 및 필터 UI 추가
+          const Divider(height: 1),
           Expanded(child: _productList()),
         ],
       ),
     );
   }
 
+  // 검색창 및 정렬/필터 칩 위젯 빌드
+  Widget _buildSearchAndFilter() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: <Widget>[
+          TextField(
+            onChanged: (String v) => setState(() => _searchQuery = v),
+            decoration: InputDecoration(
+              hintText: '상품명 검색',
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              // 발주 중지된 상품만 모아보는 필터
+              FilterChip(
+                label: const Text('중지 품목 모아보기', style: TextStyle(fontSize: 12)),
+                selected: _showDisabledOnly,
+                onSelected: (bool v) => setState(() => _showDisabledOnly = v),
+              ),
+              const SizedBox(width: 8),
+              // 이름순 정렬 토글 버튼
+              ActionChip(
+                avatar: Icon(_sortByName ? Icons.sort_by_alpha : Icons.sort, size: 16),
+                label: Text(_sortByName ? '이름순' : '기본순', style: const TextStyle(fontSize: 12)),
+                onPressed: () => setState(() => _sortByName = !_sortByName),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _productList() {
-    final Query<Map<String, dynamic>> q =
-        FirebaseFirestore.instance.collection('products').orderBy('name');
+    Query<Map<String, dynamic>> q =
+        FirebaseFirestore.instance.collection('products');
+    
+    if (_sortByName) {
+      q = q.orderBy('name');
+    }
+    
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: q.snapshots(),
       builder: (BuildContext context,
@@ -77,13 +134,28 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final List<Product> products =
+        
+        List<Product> products =
             snap.data!.docs.map(Product.fromDoc).toList();
+        
+        // 검색 필터링
+        if (_searchQuery.isNotEmpty) {
+          products = products
+              .where((Product p) =>
+                  p.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+              .toList();
+        }
+        
+        // 중지 품목 필터링
+        if (_showDisabledOnly) {
+          products = products.where((Product p) => !p.enabled).toList();
+        }
+
         if (products.isEmpty) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(24),
-              child: Text('동기화된 상품이 없습니다. 위 새로고침으로 카페24 상품을 가져오세요.',
+              child: Text('조건에 맞는 상품이 없습니다.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Color(0xFF8A8880))),
             ),

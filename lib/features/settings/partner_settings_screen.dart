@@ -12,29 +12,32 @@ class PartnerSettingsScreen extends StatefulWidget {
   const PartnerSettingsScreen(
       {super.key, required this.uid, required this.partner});
 
-  final String uid;
-  final Partner partner;
+  final String uid; // 사용자 고유 ID
+  final Partner partner; // 거래처 정보 객체
 
   @override
   State<PartnerSettingsScreen> createState() => _PartnerSettingsScreenState();
 }
 
 class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
-  bool? _notify; // null이면 조회 중.
+  bool? _notify; // 알림 활성화 여부 (null이면 로딩 중)
 
   @override
   void initState() {
     super.initState();
+    // FCM 서비스로부터 현재 기기의 알림 설정 상태를 가져옴
     FcmService.isEnabled(widget.uid).then((bool v) {
       if (mounted) setState(() => _notify = v);
     });
   }
 
+  // 알림 설정을 끄거나 켜는 함수
   Future<void> _toggleNotify(bool next) async {
     setState(() => _notify = next);
     await FcmService.setEnabled(widget.uid, next);
   }
 
+  // 배송지 관리 시트를 바텀 시트로 엶
   void _openAddresses() {
     showModalBottomSheet<void>(
       context: context,
@@ -46,6 +49,7 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
     );
   }
 
+  // 화면 하단에 짧은 메시지(스낵바)를 보여줌
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -54,9 +58,11 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('설정')),
+      appBar: AppBar(title: const Text('내 정보')), // 명세서에 따라 '설정'에서 '내 정보'로 변경
       body: ListView(
         children: <Widget>[
+          _InfoCard(partner: widget.partner), // [신규] 상단 거래처 정보 카드 추가
+          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.local_shipping_outlined),
             title: const Text('배송지 관리'),
@@ -90,6 +96,7 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
     );
   }
 
+  // 비밀번호 변경 프로세스 (재인증 후 새 비밀번호 설정)
   Future<void> _changePassword() async {
     final _PwInput? input = await _promptPassword();
     if (input == null) return;
@@ -181,4 +188,72 @@ class _PwInput {
 
   final String current;
   final String next;
+}
+
+/// 거래처 정보 카드 (읽기 전용).
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({required this.partner});
+
+  final Partner partner;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F4EF),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.business, size: 20, color: Color(0xFF3B7A57)),
+              const SizedBox(width: 8),
+              Text(
+                partner.name,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1C1B1F),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _item(Icons.person_outline, '담당자', partner.manager ?? '-'),
+          const SizedBox(height: 8),
+          _item(Icons.phone_outlined, '연락처', partner.phone ?? '-'),
+          const SizedBox(height: 12),
+          const Text(
+            '※ 정보 수정은 운영자에게 요청해 주세요.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF8A8880)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _item(IconData icon, String label, String value) {
+    return Row(
+      children: <Widget>[
+        Icon(icon, size: 16, color: const Color(0xFF8A8880)),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: const TextStyle(fontSize: 14, color: Color(0xFF8A8880)),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1C1B1F),
+          ),
+        ),
+      ],
+    );
+  }
 }
