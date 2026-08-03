@@ -6,7 +6,8 @@ enum OrderStatus {
   processing('processing', '처리중', '준비중', 2),
   shipping('shipping', '배송중', '배송중', 3),
   done('done', '완료', '완료', 4),
-  hold('hold', '보류', '접수됨', 1);
+  hold('hold', '보류', '접수됨', 1),
+  canceled('canceled', '취소됨', '취소됨', 0);
 
   const OrderStatus(this.code, this.operatorLabel, this.partnerLabel, this.step);
 
@@ -41,11 +42,15 @@ enum OrderStatus {
       case OrderStatus.hold:
         return <OrderStatus>[OrderStatus.newOrder];
       case OrderStatus.done:
+      case OrderStatus.canceled:
         return <OrderStatus>[];
     }
   }
 
   bool canTransitionTo(OrderStatus next) => allowedTransitions.contains(next);
+
+  /// 거래처가 취소 가능한 상태인지 여부 (신규/보류 단계).
+  bool get isCancelable => this == OrderStatus.newOrder || this == OrderStatus.hold;
 }
 
 /// 발주 유입 채널. 앱 발주와 카페24 몰 주문을 동일하게 취급하되 출처만 구분.

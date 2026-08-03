@@ -108,6 +108,41 @@ class OrderService {
     });
   }
 
+  /// 거래처에 의한 발주 취소. 트랜잭션으로 현재 상태를 검증한다.
+  static Future<void> cancelOrder({
+    required String orderId,
+    required String uid,
+    String? reason,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> ref =
+        _db.collection('orders').doc(orderId);
+    await _db.runTransaction((Transaction tx) async {
+      final DocumentSnapshot<Map<String, dynamic>> snap = await tx.get(ref);
+      if (!snap.exists) throw OrderSubmitException('발주를 찾을 수 없습니다.');
+      final OrderStatus current =
+          OrderStatus.fromCode(snap.data()?['status'] as String? ?? 'new');
+
+      if (current == OrderStatus.canceled) return;
+      if (!current.isCancelable) {
+        throw OrderSubmitException(
+            '${current.partnerLabel} 상태에서는 취소할 수 없습니다. 운영자에게 문의하세요.');
+      }
+
+      tx.update(ref, <String, dynamic>{
+        'status': OrderStatus.canceled.code,
+        'history': FieldValue.arrayUnion(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'status': OrderStatus.canceled.code,
+            'byUid': uid,
+            'at': Timestamp.now(),
+            if (reason != null) 'reason': reason,
+          },
+        ]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
   /// 발주를 저장하고 발주번호를 돌려준다.
   static Future<String> submit({
     required String uid,

@@ -19,6 +19,20 @@ class ProgressSteps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (status == OrderStatus.canceled) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        alignment: Alignment.centerLeft,
+        child: const Text(
+          '취소된 발주입니다',
+          style: TextStyle(
+            fontSize: 12,
+            color: Color(0xFF9B1C1C),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
+    }
     final int current = status.step; // 1~4
     final List<Widget> row = <Widget>[];
     for (int i = 0; i < _steps.length; i++) {

@@ -74,12 +74,19 @@ service cloud.firestore {
     }
 
     // 거래처는 자기 발주만 read + create(형태 검증 포함).
-    // 상태 변경(update)은 운영자만, 삭제는 금지(감사 이력 보존).
+    // 상태 변경(update)은 운영자 또는 '취소'를 원하는 거래처 본인.
+    // 삭제는 금지(감사 이력 보존).
     match /orders/{orderId} {
       allow read: if isOperator() ||
         (isSignedIn() && resource.data.partnerId == myPartnerId());
       allow create: if isOperator() || (isSignedIn() && isValidNewOrder());
-      allow update: if isOperator();
+      allow update: if isOperator() || (
+        isSignedIn() &&
+        resource.data.partnerId == myPartnerId() &&
+        resource.data.status in ['new', 'hold'] &&
+        request.resource.data.status == 'canceled' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'history', 'updatedAt'])
+      );
       allow delete: if false;
     }
 

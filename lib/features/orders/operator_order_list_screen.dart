@@ -179,6 +179,7 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
           _chip('배송중', OrderStatus.shipping),
           _chip('완료', OrderStatus.done),
           _chip('보류', OrderStatus.hold),
+          _chip('취소', OrderStatus.canceled),
         ],
       ),
     );

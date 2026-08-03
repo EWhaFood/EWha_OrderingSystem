@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/constants/order_status.dart';
 import '../../core/models/order.dart' as model;
 import '../../core/models/product.dart';
 import '../../core/services/order_service.dart';
@@ -58,6 +59,11 @@ class _DetailViewState extends State<_DetailView> {
 
   model.Order get order => widget.order;
 
+  String get _uid {
+    final PartnerOrderDetailScreen? parent = context.findAncestorWidgetOfExactType<PartnerOrderDetailScreen>();
+    return parent?.uid ?? '';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -78,6 +84,7 @@ class _DetailViewState extends State<_DetailView> {
           _itemTable(),
           if (order.shippingAddress != null) _info('배송지', order.shippingAddress!),
           if (order.memo != null) _info('요청 메모', order.memo!),
+          _historySection(),
         ],
       ),
       bottomNavigationBar: _reorderBar(),
@@ -167,22 +174,163 @@ class _DetailViewState extends State<_DetailView> {
     );
   }
 
+  Widget _historySection() {
+    final List<model.StatusHistory> history = order.history;
+    if (history.isEmpty) return const SizedBox.shrink();
+
+    // 취소 이력만 찾거나 전체 이력을 보여줄 수 있는데, 
+    // 요구사항에 "상태 이력에 취소 시각·주체 기록, 상세 화면에서 확인 가능"이 있으므로
+    // 취소 이력이 있으면 강조해서 보여준다.
+    final model.StatusHistory? cancelHistory = history.cast<model.StatusHistory?>().firstWhere(
+          (h) => h?.status == OrderStatus.canceled,
+          orElse: () => null,
+        );
+
+    if (cancelHistory == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
+              const SizedBox(width: 6),
+              const Text('취소 정보',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red)),
+              const Spacer(),
+              Text(formatListTime(cancelHistory.at.toDate()),
+                  style: const TextStyle(fontSize: 12, color: Colors.red)),
+            ],
+          ),
+          if (cancelHistory.reason != null && cancelHistory.reason!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('사유: ${cancelHistory.reason}',
+                style: const TextStyle(fontSize: 13, color: Colors.black87)),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _reorderBar() {
+    final bool cancelable = order.status.isCancelable;
+    final bool canReorder = order.status != OrderStatus.canceled;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: OutlinedButton.icon(
-          onPressed: _reordering ? null : _reorder,
-          icon: _reordering
-              ? const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.refresh),
-          label: const Text('같은 구성으로 재주문'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (cancelable) ...<Widget>[
+              OutlinedButton(
+                onPressed: _reordering ? null : _confirmCancel,
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('발주 취소'),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (canReorder)
+              OutlinedButton.icon(
+                onPressed: _reordering ? null : _reorder,
+                icon: _reordering
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh),
+                label: const Text('같은 구성으로 재주문'),
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _confirmCancel() async {
+    final List<String> reasons = ['오주문', '품목 변경', '배송지 변경', '단순 변심', '기타'];
+    String? selectedReason = reasons[0];
+
+    final String? reason = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('발주를 취소하시겠습니까?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('취소된 발주는 되돌릴 수 없습니다. 수정을 원하시면 취소 후 다시 발주해 주세요.'),
+              const SizedBox(height: 20),
+              const Text('취소 사유 선택',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ...reasons.map((r) => RadioListTile<String>(
+                    title: Text(r, style: const TextStyle(fontSize: 14)),
+                    value: r,
+                    groupValue: selectedReason,
+                    onChanged: (val) => setDialogState(() => selectedReason = val),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  )),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('아니요')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, selectedReason),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('취소합니다'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+
+    try {
+      setState(() => _reordering = true);
+      await OrderService.cancelOrder(
+        orderId: order.id,
+        uid: _uid,
+        reason: reason,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('발주가 취소되었습니다.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        String message = e.toString();
+        if (message.contains('permission-denied')) {
+          message = '취소 권한이 없거나 이미 운영자가 처리를 시작했습니다.';
+        } else if (message.contains('OrderSubmitException')) {
+          // 커스텀 예외는 메시지만 추출 (예: "OrderSubmitException: 메시지" -> "메시지")
+          message = message.replaceFirst('OrderSubmitException: ', '');
+          message = message.replaceFirst('Exception: ', '');
+        } else {
+          message = '알 수 없는 오류가 발생했습니다: $message';
+        }
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } finally {
+      if (mounted) setState(() => _reordering = false);
+    }
   }
 
   /// 같은 품목·수량을 장바구니에 담고 발주 등록 탭으로 이동한다.

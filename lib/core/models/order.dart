@@ -40,22 +40,34 @@ class OrderItem {
 
 /// 상태 변경 이력 한 건.
 class StatusHistory {
-  const StatusHistory({required this.status, required this.byUid, required this.at});
+  const StatusHistory({
+    required this.status,
+    required this.byUid,
+    required this.at,
+    this.reason,
+  });
 
   final OrderStatus status;
   final String byUid;
   final Timestamp at;
+  final String? reason;
 
   factory StatusHistory.fromMap(Map<String, dynamic> data) {
     return StatusHistory(
       status: OrderStatus.fromCode(data['status'] as String? ?? 'new'),
       byUid: data['byUid'] as String? ?? '',
       at: data['at'] as Timestamp? ?? Timestamp.now(),
+      reason: data['reason'] as String?,
     );
   }
 
   Map<String, dynamic> toMap() {
-    return <String, dynamic>{'status': status.code, 'byUid': byUid, 'at': at};
+    return <String, dynamic>{
+      'status': status.code,
+      'byUid': byUid,
+      'at': at,
+      if (reason != null) 'reason': reason,
+    };
   }
 }
 

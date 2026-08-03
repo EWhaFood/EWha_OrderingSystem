@@ -50,16 +50,24 @@ class OrderHistoryScreen extends StatelessWidget {
 
   Widget _list(BuildContext context, List<model.Order> orders) {
     final List<model.Order> active = orders
-        .where((model.Order o) => o.status != OrderStatus.done)
+        .where((model.Order o) =>
+            o.status != OrderStatus.done && o.status != OrderStatus.canceled)
         .toList();
-    final List<model.Order> past = orders
+    
+    final List<model.Order> done = orders
         .where((model.Order o) => o.status == OrderStatus.done)
         .toList();
+    final List<model.Order> canceled = orders
+        .where((model.Order o) => o.status == OrderStatus.canceled)
+        .toList();
+
     return ListView(
       children: <Widget>[
         for (final model.Order o in active) _ActiveCard(uid: uid, order: o),
-        if (past.isNotEmpty) _sectionLabel('지난 발주'),
-        for (final model.Order o in past) _PastRow(uid: uid, order: o),
+        if (done.isNotEmpty) _sectionLabel('지난 발주'),
+        for (final model.Order o in done) _PastRow(uid: uid, order: o),
+        if (canceled.isNotEmpty) _sectionLabel('취소된 발주'),
+        for (final model.Order o in canceled) _PastRow(uid: uid, order: o),
       ],
     );
   }

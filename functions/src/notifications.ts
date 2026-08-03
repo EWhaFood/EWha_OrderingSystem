@@ -17,6 +17,7 @@ function statusLabel(status: string): string {
     processing: "준비중",
     shipping: "배송중",
     done: "완료",
+    canceled: "취소됨",
   };
   return map[status] ?? status;
 }
@@ -99,6 +100,16 @@ export const onOrderStatusChanged = onDocumentUpdated("orders/{orderId}", async 
   if (!before || !after || before.status === after.status) return;
   const partnerId = after.partnerId as string | undefined;
   if (!partnerId) return;
+
+  // 1. 상태가 canceled인 경우 운영자에게 알림 (거래처 취소 대응)
+  if (after.status === "canceled") {
+    const operatorRefs = await collectTokens("role", "operator");
+    const title = "발주 취소 알림";
+    const body = `${after.partnerName ?? "거래처"}에서 발주를 취소했습니다: ${orderSummary(after)}`;
+    await sendAndPrune(operatorRefs, title, body, event.params.orderId);
+  }
+
+  // 2. 해당 거래처 유저들에게 상태 변경 알림
   const refs = await collectTokens("partnerId", partnerId);
   const body = `${orderSummary(after)} → ${statusLabel(after.status as string)}`;
   await sendAndPrune(refs, "발주 상태 변경", body, event.params.orderId);

@@ -357,6 +357,8 @@ class _ActionBarState extends State<_ActionBar> {
         return '보류';
       case OrderStatus.newOrder:
         return '보류 해제';
+      case OrderStatus.canceled:
+        return '취소됨';
     }
   }
 
@@ -388,12 +390,15 @@ class _ActionBarState extends State<_ActionBar> {
   Widget build(BuildContext context) {
     final List<OrderStatus> allowed = widget.order.status.allowedTransitions;
     if (allowed.isEmpty) {
-      return const SafeArea(
+      final String msg = widget.order.status == OrderStatus.canceled
+          ? '취소된 발주입니다'
+          : '처리 완료된 발주입니다';
+      return SafeArea(
         child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('처리 완료된 발주입니다',
+          padding: const EdgeInsets.all(16),
+          child: Text(msg,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF8A8880))),
+              style: const TextStyle(color: Color(0xFF8A8880))),
         ),
       );
     }

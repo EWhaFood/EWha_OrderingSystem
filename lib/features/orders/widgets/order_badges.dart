@@ -16,6 +16,7 @@ const Map<OrderStatus, _BadgeColors> _statusColors = <OrderStatus, _BadgeColors>
   OrderStatus.shipping: _BadgeColors(Color(0xFFEEEDFE), Color(0xFF3C3489)),
   OrderStatus.done: _BadgeColors(Color(0xFFE1F5EE), Color(0xFF085041)),
   OrderStatus.hold: _BadgeColors(Color(0xFFF1EFE8), Color(0xFF444441)),
+  OrderStatus.canceled: _BadgeColors(Color(0xFFFDE8E8), Color(0xFF9B1C1C)),
 };
 
 /// 처리 상태 배지. 운영자용 라벨(신규/처리중/…)과 거래처용 라벨(접수됨/준비중/…)을 구분해 쓴다.
