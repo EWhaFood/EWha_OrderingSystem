@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/models/cafe24_status.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/fcm_service.dart';
+import '../../core/services/order_service.dart';
 
 /// 운영자 설정 화면. 카페24 연동 상태, 알림 설정, 로그아웃을 담당한다.
 class AdminSettingsScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class AdminSettingsScreen extends StatefulWidget {
 
 class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   bool? _notify; // null이면 조회 중.
+  TimeOfDay? _cutoff; // 로컬 상태로 관리하여 즉시 반영
 
   @override
   void initState() {
@@ -25,11 +27,58 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     FcmService.isEnabled(widget.uid).then((bool v) {
       if (mounted) setState(() => _notify = v);
     });
+    // 초기 마감 시간 로드
+    OrderService.getCutoffTime().then((TimeOfDay v) {
+      if (mounted) setState(() => _cutoff = v);
+    });
   }
 
   Future<void> _toggleNotify(bool next) async {
     setState(() => _notify = next);
     await FcmService.setEnabled(widget.uid, next);
+  }
+
+  Future<void> _pickCutoffTime() async {
+    final TimeOfDay current = _cutoff ?? const TimeOfDay(hour: 15, minute: 0);
+    if (!mounted) return;
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: current,
+      helpText: '발주 마감 시간 설정',
+      cancelText: '취소',
+      confirmText: '설정',
+      hourLabelText: '시',
+      minuteLabelText: '분',
+    );
+
+    if (picked != null && mounted) {
+      final TimeOfDay oldTime = _cutoff ?? const TimeOfDay(hour: 15, minute: 0);
+      setState(() => _cutoff = picked);
+
+      final String timeStr =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      
+      try {
+        await FirebaseFirestore.instance
+            .collection('settings')
+            .doc('global')
+            .set(<String, dynamic>{'cutoffTime': timeStr}, SetOptions(merge: true));
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('마감 시간이 저장되었습니다.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('저장 실패: $e')),
+          );
+          // 실패 시 원래대로 복구
+          setState(() => _cutoff = oldTime);
+        }
+      }
+    }
   }
 
   @override
@@ -40,6 +89,24 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         children: <Widget>[
           const _SectionHeader(title: '카페24 연동 상태'),
           const _Cafe24StatusSection(),
+          const Divider(height: 32),
+          const _SectionHeader(title: '발주 설정'),
+          ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('발주 마감 시간'),
+            subtitle: const Text('마감 시간 이후 주문은 익일 처리분으로 분류됩니다'),
+            trailing: Text(
+              _cutoff != null
+                  ? '${_cutoff!.hour.toString().padLeft(2, '0')}:${_cutoff!.minute.toString().padLeft(2, '0')}'
+                  : '--:--',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            onTap: _pickCutoffTime,
+          ),
           const Divider(height: 32),
           const _SectionHeader(title: '환경 설정'),
           SwitchListTile(

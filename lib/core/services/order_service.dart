@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 import '../constants/order_status.dart';
 import '../models/product.dart';
@@ -17,6 +18,54 @@ class OrderSubmitException implements Exception {
 /// 이후 상품 가격이 바뀌어도 기존 주문 금액은 변하지 않는다.
 class OrderService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  /// 마감 시간 설정 가져오기 (기본값 15:00)
+  static Future<TimeOfDay> getCutoffTime() async {
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> doc =
+          await _db.collection('settings').doc('global').get();
+      if (doc.exists) {
+        final String? timeStr = doc.data()?['cutoffTime'] as String?;
+        if (timeStr != null) {
+          final List<String> parts = timeStr.split(':');
+          if (parts.length == 2) {
+            return TimeOfDay(
+              hour: int.parse(parts[0]),
+              minute: int.parse(parts[1]),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // 에러 시 기본값 반환
+    }
+    return const TimeOfDay(hour: 15, minute: 0);
+  }
+
+  /// 처리 기준일 계산.
+  /// 마감 시간 이후거나 주말이면 다음 영업일로 설정한다.
+  static DateTime calculateProcessDate(DateTime now, TimeOfDay cutoff) {
+    DateTime date = DateTime(now.year, now.month, now.day);
+    final DateTime cutoffDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      cutoff.hour,
+      cutoff.minute,
+    );
+
+    // 마감 시간 이후면 익일로 시작
+    if (now.isAfter(cutoffDateTime)) {
+      date = date.add(const Duration(days: 1));
+    }
+
+    // 주말(토, 일)이면 월요일로 건너뜀
+    while (date.weekday == DateTime.saturday || date.weekday == DateTime.sunday) {
+      date = date.add(const Duration(days: 1));
+    }
+
+    return date;
+  }
 
   /// 발주번호. 클라이언트 채번이라 초 단위 + 밀리초로 충돌을 피한다.
   /// (거래처별 동시 제출 빈도가 낮아 실용상 충분하며, 필요해지면 Functions 채번으로 옮긴다.)
@@ -172,7 +221,14 @@ class OrderService {
     }
     if (items.isEmpty) throw OrderSubmitException('담긴 품목이 없습니다.');
 
-    final String orderNo = generateOrderNo(DateTime.now());
+    final DateTime now = DateTime.now();
+    final TimeOfDay cutoff = await getCutoffTime();
+    final DateTime processDate = calculateProcessDate(now, cutoff);
+    final bool isNextDay = processDate.day != now.day ||
+        processDate.month != now.month ||
+        processDate.year != now.year;
+
+    final String orderNo = generateOrderNo(now);
     await _db.collection('orders').add(<String, dynamic>{
       'orderNo': orderNo,
       'source': OrderSource.app.code,
@@ -183,6 +239,8 @@ class OrderService {
       'totalAmount': total,
       'shippingAddress': shippingAddress,
       'memo': memo,
+      'processDate': Timestamp.fromDate(processDate),
+      'isNextDay': isNextDay,
       // 배열 안에는 serverTimestamp를 쓸 수 없어 클라이언트 시각을 기록한다.
       'history': <Map<String, dynamic>>[
         <String, dynamic>{

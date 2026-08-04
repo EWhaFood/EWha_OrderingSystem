@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants/order_status.dart';
 import '../../core/models/order.dart' as model;
@@ -128,8 +129,24 @@ class _ActiveCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text('${_summary(order)} · ${formatWon(order.totalAmount)}',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
+            Row(
+              children: <Widget>[
+                Text('${_summary(order)} · ${formatWon(order.totalAmount)}',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
+                if (order.isNextDay) ...<Widget>[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFCF0EF),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('익일',
+                        style: TextStyle(fontSize: 10, color: Color(0xFFA32D2D))),
+                  ),
+                ],
+              ],
+            ),
             const SizedBox(height: 12),
             ProgressSteps(status: order.status),
           ],
@@ -168,8 +185,20 @@ class _PastRow extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text('${_summary(order)} · ${formatWon(order.totalAmount)}',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
+            Row(
+              children: <Widget>[
+                Text('${_summary(order)} · ${formatWon(order.totalAmount)}',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
+                if (order.processDate != null) ...<Widget>[
+                  const SizedBox(width: 8),
+                  Text('처리: ${DateFormat('MM/dd').format(order.processDate!)}',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF8A8880),
+                          fontWeight: FontWeight.w500)),
+                ],
+              ],
+            ),
           ],
         ),
       ),

@@ -7,6 +7,7 @@ import '../../core/services/auth_service.dart';
 import '../../core/utils/format.dart';
 import '../partners/partner_management_screen.dart';
 import '../products/product_management_screen.dart';
+import '../settings/admin_settings_screen.dart';
 import 'operator_order_detail_screen.dart';
 import 'widgets/order_badges.dart';
 
@@ -105,6 +106,17 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
               MaterialPageRoute<void>(
                 builder: (BuildContext context) =>
                     const PartnerManagementScreen(),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: '설정',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (BuildContext context) =>
+                    AdminSettingsScreen(uid: widget.uid),
               ),
             ),
           ),

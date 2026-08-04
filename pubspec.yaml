@@ -44,6 +44,7 @@ dependencies:
   flutter_local_notifications: ^22.0.1
   url_launcher: ^6.3.2
   cloud_functions: ^5.6.2
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:

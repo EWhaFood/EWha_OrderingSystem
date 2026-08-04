@@ -122,5 +122,11 @@ service cloud.firestore {
       allow read: if isOperator();
       allow write: if false;
     }
+
+    // 전역 설정 (마감 시간 등). 운영자만 write 가능, 로그인 사용자는 read 가능.
+    match /settings/{doc} {
+      allow read: if isSignedIn();
+      allow write: if isOperator();
+    }
   }
 }

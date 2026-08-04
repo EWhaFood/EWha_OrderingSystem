@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models/partner.dart';
 import '../../core/models/product.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/order_service.dart';
 import '../../core/utils/format.dart';
 import 'cart.dart';
 import 'order_confirm_screen.dart';
@@ -85,6 +88,7 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
       ),
       body: Column(
         children: <Widget>[
+          const _CutoffBanner(),
           _searchField(),
           Expanded(child: _productList()),
         ],
@@ -160,6 +164,90 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
           partner: widget.partner,
           products: _latest,
         ),
+      ),
+    );
+  }
+}
+
+/// 상단 마감 안내 배너. 1분마다 또는 마감 시간 변경 시 갱신된다.
+class _CutoffBanner extends StatefulWidget {
+  const _CutoffBanner();
+
+  @override
+  State<_CutoffBanner> createState() => _CutoffBannerState();
+}
+
+class _CutoffBannerState extends State<_CutoffBanner> {
+  Timer? _timer;
+  TimeOfDay? _cutoff;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final TimeOfDay next = await OrderService.getCutoffTime();
+    if (mounted) setState(() => _cutoff = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cutoff == null) return const SizedBox.shrink();
+
+    final DateTime now = DateTime.now();
+    final DateTime cutoffDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      _cutoff!.hour,
+      _cutoff!.minute,
+    );
+
+    final bool isPassed = now.isAfter(cutoffDateTime);
+    final Duration diff = cutoffDateTime.difference(now);
+
+    final String message;
+    final Color bgColor;
+    final Color textColor;
+
+    if (isPassed) {
+      message = '오늘 발주가 마감되었습니다. 지금 주문 시 익일 처리됩니다.';
+      bgColor = const Color(0xFFFCF0EF);
+      textColor = const Color(0xFFA32D2D);
+    } else {
+      final int h = diff.inHours;
+      final int m = diff.inMinutes % 60;
+      message = '오늘 마감까지 ${h > 0 ? '$h시간 ' : ''}$m분 남았습니다.';
+      bgColor = const Color(0xFFF5F4EF);
+      textColor = const Color(0xFF5F5E5A);
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: bgColor,
+      child: Row(
+        children: <Widget>[
+          Icon(isPassed ? Icons.info_outline : Icons.timer_outlined,
+              size: 16, color: textColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w500, color: textColor),
+            ),
+          ),
+        ],
       ),
     );
   }

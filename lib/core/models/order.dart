@@ -88,6 +88,8 @@ class Order {
     this.cafe24OrderId,
     this.history = const <StatusHistory>[],
     this.createdAt,
+    this.processDate,
+    this.isNextDay = false,
   });
 
   final String id;
@@ -110,6 +112,12 @@ class Order {
   final String? cafe24OrderId;
   final List<StatusHistory> history;
   final Timestamp? createdAt;
+
+  /// 처리 기준일. 마감 시간 이후 주문 시 익일로 설정될 수 있다.
+  final DateTime? processDate;
+
+  /// 익일 처리 여부.
+  final bool isNextDay;
 
   factory Order.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final Map<String, dynamic> d = doc.data() ?? <String, dynamic>{};
@@ -134,6 +142,8 @@ class Order {
           .map((dynamic h) => StatusHistory.fromMap(h as Map<String, dynamic>))
           .toList(),
       createdAt: d['createdAt'] as Timestamp?,
+      processDate: (d['processDate'] as Timestamp?)?.toDate(),
+      isNextDay: d['isNextDay'] as bool? ?? false,
     );
   }
 
@@ -152,6 +162,8 @@ class Order {
       'cafe24OrderId': cafe24OrderId,
       'history': history.map((StatusHistory h) => h.toMap()).toList(),
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
+      'processDate': processDate != null ? Timestamp.fromDate(processDate!) : null,
+      'isNextDay': isNextDay,
     };
   }
 }

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants/order_status.dart';
 import '../../core/models/order.dart' as model;
@@ -110,6 +111,37 @@ class _DetailViewState extends State<_DetailView> {
               '${order.source.label} 발주 · '
               '${formatListTime(order.createdAt?.toDate())}',
               style: const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
+          if (order.processDate != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                const Icon(Icons.event_note, size: 14, color: Color(0xFF8A8880)),
+                const SizedBox(width: 4),
+                Text(
+                  '처리 기준일: ${DateFormat('yyyy년 MM월 dd일').format(order.processDate!)}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1A1A18)),
+                ),
+                if (order.isNextDay) ...<Widget>[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFCF0EF),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('익일 처리분',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFA32D2D))),
+                  ),
+                ],
+              ],
+            ),
+          ],
           const SizedBox(height: 14),
           ProgressSteps(status: order.status),
         ],
