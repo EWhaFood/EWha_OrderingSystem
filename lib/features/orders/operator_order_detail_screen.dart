@@ -72,6 +72,9 @@ class _DetailView extends StatelessWidget {
         children: <Widget>[
           _PartnerCard(order: order),
           _itemTable(),
+          if (order.desiredDeliveryDate != null)
+            _info('희망 배송일',
+                '${order.desiredDeliveryDate!.year}.${order.desiredDeliveryDate!.month}.${order.desiredDeliveryDate!.day}'),
           if (order.shippingAddress != null) _info('배송지', order.shippingAddress!),
           if (order.memo != null) _info('거래처 요청', order.memo!),
           _InternalMemo(order: order),

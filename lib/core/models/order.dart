@@ -90,6 +90,7 @@ class Order {
     this.createdAt,
     this.processDate,
     this.isNextDay = false,
+    this.desiredDeliveryDate,
   });
 
   final String id;
@@ -119,6 +120,9 @@ class Order {
   /// 익일 처리 여부.
   final bool isNextDay;
 
+  /// 희망 배송일 (거래처 선택).
+  final DateTime? desiredDeliveryDate;
+
   factory Order.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final Map<String, dynamic> d = doc.data() ?? <String, dynamic>{};
     final List<dynamic> rawItems = d['items'] as List<dynamic>? ?? <dynamic>[];
@@ -144,6 +148,7 @@ class Order {
       createdAt: d['createdAt'] as Timestamp?,
       processDate: (d['processDate'] as Timestamp?)?.toDate(),
       isNextDay: d['isNextDay'] as bool? ?? false,
+      desiredDeliveryDate: (d['desiredDeliveryDate'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -164,6 +169,9 @@ class Order {
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
       'processDate': processDate != null ? Timestamp.fromDate(processDate!) : null,
       'isNextDay': isNextDay,
+      'desiredDeliveryDate': desiredDeliveryDate != null
+          ? Timestamp.fromDate(desiredDeliveryDate!)
+          : null,
     };
   }
 }

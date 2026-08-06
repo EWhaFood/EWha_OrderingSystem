@@ -33,11 +33,34 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
 
   /// 무한 스크롤: 처음 30건을 받고 바닥에 닿을 때마다 늘린다.
   int _limit = 30;
+  bool _isFetchingMore = false;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _ordersStream;
 
   @override
   void initState() {
     super.initState();
+    _updateStream();
     _scrollCtrl.addListener(_onScroll);
+  }
+
+  void _updateStream() {
+    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+        .collection('orders')
+        .orderBy('desiredDeliveryDate', descending: false)
+        .orderBy('createdAt', descending: true)
+        .limit(_limit);
+    if (_filter != null) {
+      q = FirebaseFirestore.instance
+          .collection('orders')
+          .where('status', isEqualTo: _filter!.code)
+          .orderBy('desiredDeliveryDate', descending: false)
+          .orderBy('createdAt', descending: true)
+          .limit(_limit);
+    }
+    setState(() {
+      _ordersStream = q.snapshots();
+      _isFetchingMore = false;
+    });
   }
 
   @override
@@ -49,28 +72,17 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
   }
 
   void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
+    if (!_scrollCtrl.hasClients || _isFetchingMore) return;
     final bool nearBottom = _scrollCtrl.position.pixels >=
         _scrollCtrl.position.maxScrollExtent - 200;
-    if (nearBottom) setState(() => _limit += 30);
+    if (nearBottom) {
+      _isFetchingMore = true;
+      _limit += 30;
+      _updateStream();
+    }
   }
 
   /// 상태 필터는 서버 쿼리로, 검색어는 클라이언트에서 거른다.
-  /// (Firestore는 부분 일치 검색을 지원하지 않아 목록 범위 안에서 필터링한다.)
-  Stream<QuerySnapshot<Map<String, dynamic>>> get _stream {
-    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
-        .collection('orders')
-        .orderBy('createdAt', descending: true)
-        .limit(_limit);
-    if (_filter != null) {
-      q = FirebaseFirestore.instance
-          .collection('orders')
-          .where('status', isEqualTo: _filter!.code)
-          .orderBy('createdAt', descending: true)
-          .limit(_limit);
-    }
-    return q.snapshots();
-  }
 
   List<model.Order> _filtered(List<model.Order> orders) {
     if (_query.isEmpty) return orders;
@@ -127,11 +139,24 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _stream,
+        stream: _ordersStream,
         builder: (BuildContext context,
             AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snap) {
           if (snap.hasError) {
-            return const Center(child: Text('발주를 불러오지 못했습니다'));
+            debugPrint('Error loading orders: ${snap.error}');
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('발주를 불러오지 못했습니다'),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _updateStream,
+                    child: const Text('다시 시도'),
+                  ),
+                ],
+              ),
+            );
           }
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -204,10 +229,11 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
       child: ChoiceChip(
         label: Text(label, style: const TextStyle(fontSize: 12)),
         selected: selected,
-        onSelected: (_) => setState(() {
+        onSelected: (_) {
           _filter = status;
-          _limit = 30;
-        }),
+          _limit = 30; // 필터 변경 시 리미트 초기화
+          _updateStream();
+        },
       ),
     );
   }
@@ -229,6 +255,10 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
   }
 
   Widget _orderCard(model.Order o) {
+    final String desired = o.desiredDeliveryDate != null
+        ? '${o.desiredDeliveryDate!.month}/${o.desiredDeliveryDate!.day}'
+        : '-';
+
     return InkWell(
       onTap: () => _openDetail(o),
       child: Container(
@@ -255,17 +285,39 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
                         fontSize: 11, color: Color(0xFF8A8880))),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(_summary(o),
-                style:
-                    const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
-            const SizedBox(height: 4),
-            Text(formatWon(o.totalAmount),
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _meta(Icons.calendar_today_outlined, '희망일: $desired',
+                    color: const Color(0xFF185FA5)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(_summary(o),
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF5F5E5A))),
+                ),
+                Text(formatWon(o.totalAmount),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500)),
+              ],
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _meta(IconData icon, String text, {Color? color}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(icon, size: 13, color: color ?? const Color(0xFF8A8880)),
+        const SizedBox(width: 4),
+        Text(text,
+            style: TextStyle(
+                fontSize: 11, color: color ?? const Color(0xFF5F5E5A))),
+      ],
     );
   }
 

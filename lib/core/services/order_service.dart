@@ -200,6 +200,7 @@ class OrderService {
     required Map<String, int> qtys,
     String? shippingAddress,
     String? memo,
+    DateTime? desiredDeliveryDate,
   }) async {
     final List<Product> products = await fetchProducts(qtys.keys.toList());
     _verify(qtys, products);
@@ -241,6 +242,9 @@ class OrderService {
       'memo': memo,
       'processDate': Timestamp.fromDate(processDate),
       'isNextDay': isNextDay,
+      'desiredDeliveryDate': desiredDeliveryDate != null
+          ? Timestamp.fromDate(desiredDeliveryDate)
+          : null,
       // 배열 안에는 serverTimestamp를 쓸 수 없어 클라이언트 시각을 기록한다.
       'history': <Map<String, dynamic>>[
         <String, dynamic>{

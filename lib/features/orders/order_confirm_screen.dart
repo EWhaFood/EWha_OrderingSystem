@@ -29,12 +29,21 @@ class OrderConfirmScreen extends StatefulWidget {
 class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
   final TextEditingController _memoCtrl = TextEditingController();
   PartnerAddress? _address;
+  DateTime? _desiredDate;
   bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
     _address = widget.partner.defaultAddress;
+    _initDesiredDate();
+  }
+
+  Future<void> _initDesiredDate() async {
+    final TimeOfDay cutoff = await OrderService.getCutoffTime();
+    final DateTime processDate =
+        OrderService.calculateProcessDate(DateTime.now(), cutoff);
+    setState(() => _desiredDate = processDate);
   }
 
   @override
@@ -65,6 +74,7 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
             children: <Widget>[
               ..._lines.map(_itemTile),
               _totalRow(),
+              _desiredDateSection(),
               _addressSection(),
               _memoSection(),
             ],
@@ -116,6 +126,72 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
         ],
       ),
     );
+  }
+
+  Widget _desiredDateSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: InkWell(
+        onTap: _submitting ? null : _selectDesiredDate,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE5E4DE)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.calendar_today_outlined,
+                  size: 18, color: Color(0xFF5F5E5A)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text('희망 배송일',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+                    Text(
+                      _desiredDate == null
+                          ? '날짜를 선택하세요'
+                          : '${_desiredDate!.year}.${_desiredDate!.month}.${_desiredDate!.day} '
+                              '(${_weekday(_desiredDate!)})',
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Color(0xFF8A8880)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _weekday(DateTime d) {
+    const List<String> days = <String>['월', '화', '수', '목', '금', '토', '일'];
+    return days[d.weekday - 1];
+  }
+
+  Future<void> _selectDesiredDate() async {
+    final TimeOfDay cutoff = await OrderService.getCutoffTime();
+    final DateTime minDate =
+        OrderService.calculateProcessDate(DateTime.now(), cutoff);
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _desiredDate ?? minDate,
+      firstDate: minDate,
+      lastDate: minDate.add(const Duration(days: 30)),
+      selectableDayPredicate: (DateTime day) {
+        // 주말(토, 일)은 선택 불가 (OrderService.calculateProcessDate 규칙과 일치)
+        return day.weekday != DateTime.saturday &&
+            day.weekday != DateTime.sunday;
+      },
+    );
+    if (picked != null && picked != _desiredDate) {
+      setState(() => _desiredDate = picked);
+    }
   }
 
   Widget _addressSection() {
@@ -201,6 +277,7 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
         qtys: Map<String, int>.from(Cart.items.value),
         shippingAddress: _address?.address,
         memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+        desiredDeliveryDate: _desiredDate,
       );
       Cart.clear();
       if (mounted) await _showDone(orderNo);

@@ -127,7 +127,8 @@ class _DetailViewState extends State<_DetailView> {
                 if (order.isNextDay) ...<Widget>[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFCF0EF),
                       borderRadius: BorderRadius.circular(4),
@@ -139,6 +140,23 @@ class _DetailViewState extends State<_DetailView> {
                             color: Color(0xFFA32D2D))),
                   ),
                 ],
+              ],
+            ),
+          ],
+          if (order.desiredDeliveryDate != null) ...<Widget>[
+            const SizedBox(height: 6),
+            Row(
+              children: <Widget>[
+                const Icon(Icons.calendar_today_outlined,
+                    size: 14, color: Color(0xFF185FA5)),
+                const SizedBox(width: 4),
+                Text(
+                  '희망 배송일: ${DateFormat('yyyy년 MM월 dd일').format(order.desiredDeliveryDate!)}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF185FA5)),
+                ),
               ],
             ),
           ],

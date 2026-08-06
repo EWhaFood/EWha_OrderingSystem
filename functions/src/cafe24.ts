@@ -271,6 +271,16 @@ function normalizeOrder(
   });
   const totalAmount = items.reduce((sum, it) => sum + it.amount, 0);
   const partner = o.member_id ? partners.get(o.member_id) : undefined;
+
+  const createdDate = o.order_date ? new Date(o.order_date) : new Date();
+  // 카페24 주문은 희망배송일이 없으므로 생성일 기준 '가장 빠른 평일'을 기본값으로 설정한다.
+  // (목록 누락 방지 및 운영자 배송 관리 편의 목적)
+  let defaultDelivery = new Date(createdDate);
+  defaultDelivery.setDate(defaultDelivery.getDate() + 1); // 기본 익일
+  while (defaultDelivery.getDay() === 0 || defaultDelivery.getDay() === 6) {
+    defaultDelivery.setDate(defaultDelivery.getDate() + 1); // 주말 건너뜀
+  }
+
   return {
     orderNo: o.order_id,
     source: "cafe24",
@@ -281,9 +291,8 @@ function normalizeOrder(
     partnerName: partner?.name ?? o.billing_name ?? null,
     cafe24OrderId: o.order_id,
     history: [{status: "new", byUid: "system", at: Timestamp.now()}],
-    createdAt: o.order_date ?
-      Timestamp.fromDate(new Date(o.order_date)) :
-      FieldValue.serverTimestamp(),
+    createdAt: Timestamp.fromDate(createdDate),
+    desiredDeliveryDate: Timestamp.fromDate(defaultDelivery),
   };
 }
 

@@ -2,6 +2,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
+import 'package:flutter_localizations/flutter_localizations.dart';
+
 import 'app.dart';
 import 'core/services/fcm_service.dart';
 // flutterfire configure 실행 시 자동 생성되는 파일이다.
