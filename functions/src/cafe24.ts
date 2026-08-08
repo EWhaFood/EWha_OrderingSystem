@@ -4,6 +4,7 @@ import {defineSecret} from "firebase-functions/params";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import {assertOperator} from "./invites";
+import {notifyOperators} from "./notifications";
 
 // Client ID/Secret은 코드·저장소에 두지 않는다.
 // 발주처가 `firebase functions:secrets:set CAFE24_CLIENT_ID` 등으로 등록한다.
@@ -147,6 +148,11 @@ export const refreshCafe24Tokens = onSchedule(
         // 갱신 실패(대개 refresh token 2주 만료) → 연동 끊김으로 표시해
         // 운영자 상품관리 화면에 경고가 뜨게 한다. 재인증(앱 재설치) 필요.
         await writeStatus(data.mallId as string, {connected: false});
+        // [추가] 운영자에게 능동 푸시 알림 전송
+        await notifyOperators(
+          "카페24 연동 장애",
+          `[${data.mallId}] 토큰 갱신 실패. 운영자 화면에서 재인증이 필요합니다.`,
+        );
       }
     }
   }
@@ -327,12 +333,28 @@ async function pollOrdersForMall(
   const endDate = kstDate(now);
   let offset = 0;
   let inserted = 0;
+  let errorCount = 0; // [EWOS-23] 장애 임계치 감지용
   for (;;) {
-    const page = await fetchOrdersPage(mallId, token, startDate, endDate, offset);
-    if (page.length === 0) break;
-    inserted += await upsertOrders(mallId, page, partners);
-    if (page.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
+    try {
+      const page = await fetchOrdersPage(mallId, token, startDate, endDate, offset);
+      if (page.length === 0) break;
+      inserted += await upsertOrders(mallId, page, partners);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+      errorCount = 0; // 성공 시 리셋
+    } catch (e) {
+      errorCount++;
+      logger.error(`카페24 주문 페이지 조회 실패 (${errorCount}회): ${mallId}`, e);
+      if (errorCount >= 3) {
+        await notifyOperators(
+          "주문 수집 반복 실패",
+          `[${mallId}] 주문 폴링이 3회 연속 실패했습니다. 네트워크 또는 API 상태를 확인하세요.`,
+        );
+        break; // 임계치 초과 시 중단
+      }
+      // 10초 대기 후 재시도
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+    }
   }
   await getFirestore().collection("secrets").doc(`cafe24_${mallId}`)
     .set({lastOrderSync: Timestamp.fromMillis(now)}, {merge: true});

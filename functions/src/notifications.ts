@@ -67,7 +67,7 @@ async function sendAndPrune(
   refs: TokenRef[],
   title: string,
   body: string,
-  orderId: string,
+  orderId?: string,
 ): Promise<void> {
   if (refs.length === 0) return;
   const res = await getMessaging().sendEachForMulticast({
@@ -77,10 +77,24 @@ async function sendAndPrune(
       priority: "high",
       notification: {channelId: "orders"},
     },
-    data: {orderId, title, body},
+    data: {
+      title, body,
+      ...(orderId ? {orderId} : {}),
+    },
   });
   logger.info(`FCM ${title}: ${res.successCount}/${refs.length} 성공`);
   await pruneInvalid(refs, res);
+}
+
+/** 운영자들에게 긴급 장애/시스템 알림을 보낸다. */
+export async function notifyOperators(
+  title: string,
+  body: string,
+): Promise<void> {
+  const refs = await collectTokens("role", "operator");
+  const time = new Date().toLocaleString("ko-KR", {timeZone: "Asia/Seoul"});
+  const summary = `[${time}] ${body}`;
+  await sendAndPrune(refs, title, summary);
 }
 
 /** 신규 발주(앱·카페24 공통) → 모든 운영자에게 알림. */
