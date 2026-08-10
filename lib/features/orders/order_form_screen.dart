@@ -10,6 +10,7 @@ import '../../core/services/order_service.dart';
 import '../../core/utils/format.dart';
 import 'cart.dart';
 import 'order_confirm_screen.dart';
+import 'standing_order_list_screen.dart';
 import 'widgets/favorite_sheet.dart';
 
 /// 거래처 홈 = 발주 등록 화면. 쇼핑이 아니라 반복 발주용이라 수량 입력이 중심이다.
@@ -79,6 +80,11 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
             icon: const Icon(Icons.star_outline),
             tooltip: '즐겨찾기',
             onPressed: _openFavorites,
+          ),
+          IconButton(
+            icon: const Icon(Icons.calendar_today_outlined),
+            tooltip: '정기발주',
+            onPressed: _openStandingOrders,
           ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -151,6 +157,17 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
       context: context,
       partnerId: widget.partner.id,
       products: _latest,
+    );
+  }
+
+  void _openStandingOrders() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => StandingOrderListScreen(
+          partner: widget.partner,
+        ),
+      ),
     );
   }
 

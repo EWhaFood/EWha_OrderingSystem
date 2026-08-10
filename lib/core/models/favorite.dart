@@ -69,4 +69,14 @@ class Favorite {
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
     };
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Favorite &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }

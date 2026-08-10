@@ -350,6 +350,8 @@ class _ActionBarState extends State<_ActionBar> {
   /// 전이별 버튼 문구. 운영자가 무엇을 하는지가 드러나게 동사형으로 쓴다.
   String _label(OrderStatus next) {
     switch (next) {
+      case OrderStatus.draft:
+        return '초안';
       case OrderStatus.processing:
         return '발주 확인 처리';
       case OrderStatus.shipping:

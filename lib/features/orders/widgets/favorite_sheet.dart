@@ -48,10 +48,10 @@ class _FavoriteSheet extends StatelessWidget {
   }
 
   Widget _header(BuildContext context) {
-    return Text('발주 즐겨찾기', style: Theme.of(context).textTheme.titleMedium);
+    return Text('발주 템플릿 관리', style: Theme.of(context).textTheme.titleMedium);
   }
 
-  /// 현재 담긴 목록을 즐겨찾기로 저장. 장바구니가 비어있으면 비활성이다.
+  /// 현재 담긴 목록을 템플릿으로 저장. 장바구니가 비어있으면 비활성이다.
   Widget _saveButton(BuildContext context) {
     return ValueListenableBuilder<Map<String, int>>(
       valueListenable: Cart.items,
@@ -59,7 +59,7 @@ class _FavoriteSheet extends StatelessWidget {
         return OutlinedButton.icon(
           onPressed: items.isEmpty ? null : () => _promptSave(context),
           icon: const Icon(Icons.star_outline),
-          label: const Text('현재 담긴 목록을 즐겨찾기로 저장'),
+          label: const Text('현재 품목들을 템플릿으로 저장'),
         );
       },
     );
@@ -143,7 +143,7 @@ class _FavoriteSheet extends StatelessWidget {
     }
   }
 
-  /// 이름 입력 다이얼로그를 띄운 뒤 즐겨찾기를 저장한다.
+  /// 이름 입력 다이얼로그를 띄운 뒤 템플릿을 저장한다.
   Future<void> _promptSave(BuildContext context) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final String? name = await _askName(context);
@@ -155,23 +155,23 @@ class _FavoriteSheet extends StatelessWidget {
         qtys: Cart.items.value,
         products: products,
       );
-      messenger.showSnackBar(const SnackBar(content: Text('즐겨찾기에 저장했습니다')));
+      messenger.showSnackBar(const SnackBar(content: Text('템플릿으로 저장했습니다')));
     } on FavoriteException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
-  /// 즐겨찾기 이름을 입력받는다. 취소하거나 빈 값이면 null을 돌려준다.
+  /// 템플릿 이름을 입력받는다. 취소하거나 빈 값이면 null을 돌려준다.
   Future<String?> _askName(BuildContext context) {
     final TextEditingController ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: const Text('즐겨찾기 저장'),
+        title: const Text('발주 템플릿 저장'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: '이름', hintText: '예: 매주 정기발주'),
+          decoration: const InputDecoration(labelText: '템플릿 이름', hintText: '예: 기본 포장용품 세트'),
         ),
         actions: <Widget>[
           TextButton(

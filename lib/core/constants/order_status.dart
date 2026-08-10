@@ -2,6 +2,7 @@
 /// 전이 규칙: new → processing → shipping → done, new ↔ hold.
 /// done 이후 변경 불가. 역방향 전이는 운영자만.
 enum OrderStatus {
+  draft('draft', '초안', '초안', 0),
   newOrder('new', '신규', '접수됨', 1),
   processing('processing', '처리중', '준비중', 2),
   shipping('shipping', '배송중', '배송중', 3),
@@ -33,6 +34,8 @@ enum OrderStatus {
   /// 이 상태에서 전이 가능한 다음 상태 목록. UI 버튼 노출에 사용.
   List<OrderStatus> get allowedTransitions {
     switch (this) {
+      case OrderStatus.draft:
+        return <OrderStatus>[OrderStatus.newOrder, OrderStatus.canceled];
       case OrderStatus.newOrder:
         return <OrderStatus>[OrderStatus.processing, OrderStatus.hold];
       case OrderStatus.processing:

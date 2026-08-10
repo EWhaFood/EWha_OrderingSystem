@@ -104,6 +104,22 @@ service cloud.firestore {
         resource.data.partnerId == myPartnerId();
     }
 
+    // 정기발주(Standing Orders): 거래처가 설정한 자동 발주 스케줄.
+    // 운영자는 모든 정기발주를 읽을 수 있고, 거래처 본인은 자신의 것만 읽고 쓰고 관리할 수 있다.
+    match /standing_orders/{id} {
+      allow read: if isOperator() ||
+        (isSignedIn() && resource.data.partnerId == myPartnerId());
+      allow create: if isSignedIn() &&
+        request.resource.data.partnerId == myPartnerId() &&
+        isNonEmptyString(request.resource.data.favoriteId) &&
+        request.resource.data.cycle is map;
+      allow update: if isSignedIn() &&
+        resource.data.partnerId == myPartnerId() &&
+        request.resource.data.partnerId == myPartnerId();
+      allow delete: if isSignedIn() &&
+        resource.data.partnerId == myPartnerId();
+    }
+
     // 초대 코드: 운영자는 현재 코드 조회만 가능. 발급·소진은 Functions(Admin) 전용이라
     // 클라이언트 write는 막는다(코드 위조·무단 소진 방지). 가입 검증도 미인증이라 Functions가 처리.
     match /inviteCodes/{code} {

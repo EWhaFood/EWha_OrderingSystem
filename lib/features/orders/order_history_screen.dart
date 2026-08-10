@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants/order_status.dart';
 import '../../core/models/order.dart' as model;
 import '../../core/utils/format.dart';
+import '../../core/services/order_service.dart';
 import 'partner_order_detail_screen.dart';
 import 'widgets/order_badges.dart';
 import 'widgets/progress_steps.dart';
