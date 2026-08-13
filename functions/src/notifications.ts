@@ -84,6 +84,24 @@ async function sendAndPrune(
   });
   logger.info(`FCM ${title}: ${res.successCount}/${refs.length} 성공`);
   await pruneInvalid(refs, res);
+
+  // Firestore에 알림 이력 기록
+  if (refs.length > 0) {
+    const db = getFirestore();
+    const batch = db.batch();
+    for (const ref of refs) {
+      const notiRef = db.collection("notifications").doc();
+      batch.set(notiRef, {
+        uid: ref.uid,
+        title,
+        body,
+        orderId: orderId ?? null,
+        isRead: false,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
 }
 
 /** 운영자들에게 긴급 장애/시스템 알림을 보낸다. */

@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import '../../core/constants/order_status.dart';
 import '../../core/models/order.dart' as model;
 import '../../core/services/auth_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/utils/format.dart';
+import '../notifications/notification_list_screen.dart';
 import '../partners/partner_management_screen.dart';
 import '../products/product_management_screen.dart';
 import '../settings/admin_settings_screen.dart';
@@ -21,6 +23,35 @@ class OperatorOrderListScreen extends StatefulWidget {
   @override
   State<OperatorOrderListScreen> createState() =>
       _OperatorOrderListScreenState();
+}
+
+class _NotificationIcon extends StatelessWidget {
+  const _NotificationIcon({required this.uid});
+
+  final String uid;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: NotificationService.watchUnreadCount(uid),
+      builder: (context, snap) {
+        final count = snap.data ?? 0;
+        return IconButton(
+          icon: Badge(
+            isLabelVisible: count > 0,
+            label: Text('$count'),
+            child: const Icon(Icons.notifications_outlined),
+          ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NotificationListScreen(uid: uid, isOperator: true),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
@@ -99,6 +130,7 @@ class _OperatorOrderListScreenState extends State<OperatorOrderListScreen> {
       appBar: AppBar(
         title: const Text('발주 현황'),
         actions: <Widget>[
+          _NotificationIcon(uid: widget.uid),
           IconButton(
             icon: const Icon(Icons.inventory_2_outlined),
             tooltip: '상품 관리',
