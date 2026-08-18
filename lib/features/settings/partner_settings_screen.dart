@@ -127,25 +127,31 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
     final User? user = FirebaseAuth.instance.currentUser;
     final String? email = user?.email;
     if (user == null || email == null) return;
+    // 1) 재인증: 실패하면 삭제를 진행하지 않는다.
     try {
       final AuthCredential cred =
           EmailAuthProvider.credential(email: email, password: password);
       await user.reauthenticateWithCredential(cred);
-      await deleteAccount(widget.uid); // users 문서·Auth 삭제 후 로그아웃
-      // 로그아웃되면 인증 리스너가 로그인 화면으로 전환한다.
     } on FirebaseAuthException catch (e) {
       _toast(e.code == 'wrong-password' || e.code == 'invalid-credential'
           ? '비밀번호가 올바르지 않습니다'
-          : '계정 삭제에 실패했습니다 (${e.code})');
+          : '재인증에 실패했습니다 (${e.code})');
+      return;
+    }
+    // 2) 서버 삭제. 부분 실패 시 좀비 세션을 남기지 않도록 로그아웃한다.
+    try {
+      await deleteAccount(widget.uid); // 로그아웃되면 인증 리스너가 로그인 화면으로 전환
     } catch (e) {
-      _toast('계정 삭제에 실패했습니다');
+      _toast('계정 삭제에 실패했습니다. 다시 로그인 후 시도해 주세요.');
+      await logout(widget.uid);
     }
   }
 
   /// 삭제 경고 + 비밀번호 확인 다이얼로그. 확인 시 입력한 비밀번호를 반환한다.
-  Future<String?> _confirmDelete() {
+  Future<String?> _confirmDelete() async {
     final TextEditingController pwCtrl = TextEditingController();
-    return showDialog<String>(
+    try {
+      return await showDialog<String>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: const Text('계정 삭제'),
@@ -178,6 +184,9 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
         ],
       ),
     );
+    } finally {
+      pwCtrl.dispose();
+    }
   }
 
   // 비밀번호 변경 프로세스 (재인증 후 새 비밀번호 설정)
@@ -211,11 +220,12 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
     }
   }
 
-  Future<_PwInput?> _promptPassword() {
+  Future<_PwInput?> _promptPassword() async {
     final TextEditingController curCtrl = TextEditingController();
     final TextEditingController newCtrl = TextEditingController();
     String? err;
-    return showDialog<_PwInput>(
+    try {
+      return await showDialog<_PwInput>(
       context: context,
       builder: (BuildContext context) => StatefulBuilder(
         builder: (BuildContext context, StateSetter setLocal) => AlertDialog(
@@ -263,6 +273,10 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
         ),
       ),
     );
+    } finally {
+      curCtrl.dispose();
+      newCtrl.dispose();
+    }
   }
 }
 

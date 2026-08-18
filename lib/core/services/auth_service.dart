@@ -27,6 +27,8 @@ Future<void> deleteAccount(String uid) async {
   } catch (e) {
     debugPrint('FCM 토큰 제거 실패(탈퇴는 계속 진행): $e');
   }
+  // 재인증 직후 토큰을 강제 갱신해 auth_time을 최신화한다(서버의 최근-인증 검증 통과용).
+  await FirebaseAuth.instance.currentUser?.getIdToken(true);
   final FirebaseFunctions fns =
       FirebaseFunctions.instanceFor(region: 'asia-northeast3');
   await fns.httpsCallable('deleteAccount').call<dynamic>();
