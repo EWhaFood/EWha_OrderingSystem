@@ -21,6 +21,7 @@ class AdminSettingsScreen extends StatefulWidget {
 class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   bool? _notify; // null이면 조회 중.
   TimeOfDay? _cutoff; // 로컬 상태로 관리하여 즉시 반영
+  ({String bank, String number, String holder})? _deposit; // 입금 계좌 (EWOS-44)
 
   @override
   void initState() {
@@ -32,6 +33,67 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     OrderService.getCutoffTime().then((TimeOfDay v) {
       if (mounted) setState(() => _cutoff = v);
     });
+    OrderService.getDepositAccount()
+        .then((({String bank, String number, String holder}) v) {
+      if (mounted) setState(() => _deposit = v);
+    });
+  }
+
+  /// 후정산 입금 계좌 설정. 거래처 내정보에 안내로 노출된다. (EWOS-44)
+  Future<void> _editDeposit() async {
+    final ({String bank, String number, String holder}) d =
+        _deposit ?? (bank: '', number: '', holder: '');
+    final TextEditingController bankC = TextEditingController(text: d.bank);
+    final TextEditingController numC = TextEditingController(text: d.number);
+    final TextEditingController holderC = TextEditingController(text: d.holder);
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('입금 계좌 설정'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextField(
+                controller: bankC,
+                decoration:
+                    const InputDecoration(labelText: '은행', isDense: true)),
+            TextField(
+                controller: numC,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: '계좌번호', isDense: true)),
+            TextField(
+                controller: holderC,
+                decoration:
+                    const InputDecoration(labelText: '예금주', isDense: true)),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('저장')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      final ({String bank, String number, String holder}) v = (
+        bank: bankC.text.trim(),
+        number: numC.text.trim(),
+        holder: holderC.text.trim()
+      );
+      await OrderService.setDepositAccount(v.bank, v.number, v.holder);
+      if (mounted) {
+        setState(() => _deposit = v);
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('입금 계좌를 저장했습니다')));
+      }
+    }
+    bankC.dispose();
+    numC.dispose();
+    holderC.dispose();
   }
 
   Future<void> _toggleNotify(bool next) async {
@@ -107,6 +169,18 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               ),
             ),
             onTap: _pickCutoffTime,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.account_balance_outlined),
+            title: const Text('입금 계좌'),
+            subtitle: Text(
+              _deposit == null || _deposit!.number.isEmpty
+                  ? '미설정 — 거래처 후정산 안내용'
+                  : '${_deposit!.bank} ${_deposit!.number} (${_deposit!.holder})',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _editDeposit,
           ),
           const Divider(height: 32),
           const _SectionHeader(title: '환경 설정'),

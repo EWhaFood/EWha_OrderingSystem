@@ -182,6 +182,29 @@ class OrderService {
     });
   }
 
+  /// 입금 계좌 정보(후정산 안내용). settings/global에 저장. (EWOS-44)
+  static Future<({String bank, String number, String holder})>
+      getDepositAccount() async {
+    final DocumentSnapshot<Map<String, dynamic>> doc =
+        await _db.collection('settings').doc('global').get();
+    final Map<String, dynamic> d = doc.data() ?? <String, dynamic>{};
+    return (
+      bank: d['depositBank'] as String? ?? '',
+      number: d['depositAccount'] as String? ?? '',
+      holder: d['depositHolder'] as String? ?? '',
+    );
+  }
+
+  /// 입금 계좌 설정(운영자).
+  static Future<void> setDepositAccount(
+      String bank, String number, String holder) async {
+    await _db.collection('settings').doc('global').set(<String, dynamic>{
+      'depositBank': bank,
+      'depositAccount': number,
+      'depositHolder': holder,
+    }, SetOptions(merge: true));
+  }
+
   /// 운영자 전용 내부 메모 저장. 거래처에게는 보이지 않는다.
   static Future<void> saveInternalMemo(String orderId, String memo) async {
     await _db.collection('orders').doc(orderId).update(<String, dynamic>{

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/models/partner.dart';
 import '../../core/services/auth_service.dart';
@@ -336,7 +337,51 @@ class _CreditCard extends StatelessWidget {
                             color: over
                                 ? const Color(0xFFA32D2D)
                                 : const Color(0xFF8A8880))),
+                    if (outstanding > 0) const _DepositInfo(),
                   ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 후정산 입금 계좌 안내(거래처용). 미수금이 있을 때만 노출하고 계좌 복사를 지원한다.
+class _DepositInfo extends StatelessWidget {
+  const _DepositInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<({String bank, String number, String holder})>(
+      future: OrderService.getDepositAccount(),
+      builder: (BuildContext context,
+          AsyncSnapshot<({String bank, String number, String holder})> snap) {
+        if (!snap.hasData || snap.data!.number.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final ({String bank, String number, String holder}) a = snap.data!;
+        final String line = '${a.bank} ${a.number} (${a.holder})';
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text('입금 계좌  $line',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF3B7A57))),
+              ),
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: a.number));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('계좌번호를 복사했습니다')));
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.copy, size: 16, color: Color(0xFF3B7A57)),
                 ),
               ),
             ],
