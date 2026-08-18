@@ -184,7 +184,8 @@ async function refreshOne(
 }
 
 // ---- 주문 폴링 (EWOS-21) ----
-// 카페24는 주문 웹훅을 제공하지 않아, 스케줄러로 Admin API를 주기 조회해 적재한다.
+// 주문 적재는 웹훅(cafe24Webhook, 저지연)이 우선하고, 유실 대비로 폴링이 누락을 보정한다.
+// 아래는 두 경로가 공유하는 조회·정규화·적재 로직이다.
 
 // Admin API 요구 버전(날짜형). 카페24가 버전을 올리면 여기만 수정한다.
 const API_VERSION = "2024-06-01";
@@ -381,7 +382,7 @@ async function pollOrdersForMall(
 }
 
 /**
- * 카페24 주문 폴링 (EWOS-21). 웹훅 미제공이라 10분마다 조회해 orders에 적재한다.
+ * 카페24 주문 폴링 (EWOS-23). 웹훅 유실 대비 10분마다 조회해 orders 누락을 보정한다.
  * 신규 적재분은 onOrderCreated 트리거가 운영자에게 자동 푸시한다.
  */
 export const pollCafe24Orders = onSchedule(
