@@ -31,20 +31,26 @@ export const clearTestData = onCall(async (req: CallableRequest) => {
     throw new HttpsError(
       "failed-precondition", "테스트 모드에서만 사용할 수 있습니다.");
   }
-  const opt = (req.data ?? {}) as {
-    partners?: boolean; partnerUsers?: boolean; cafe24Products?: boolean;
+  const o = (req.data ?? {}) as {
+    orders?: boolean; notifications?: boolean;
+    favorites?: boolean; standingOrders?: boolean;
+    products?: boolean; cafe24Products?: boolean;
+    partners?: boolean; partnerUsers?: boolean;
   };
-  const deleted: Record<string, number> = {
-    orders: await purge("orders"),
-    favorites: await purge("favorites"),
-    standing_orders: await purge("standing_orders"),
-    // 수동 상품만. cafe24_ 접두는 보존(재동기화 자산), 옵션 시 전부.
-    products: await purge("products",
-      (d) => !opt.cafe24Products && d.id.startsWith("cafe24_")),
-  };
-  if (opt.partners) deleted.partners = await purge("partners");
+  // 선택한 항목만 삭제한다(기본은 아무것도 안 지움).
+  const deleted: Record<string, number> = {};
+  if (o.orders) deleted.orders = await purge("orders");
+  if (o.notifications) deleted.notifications = await purge("notifications");
+  if (o.favorites) deleted.favorites = await purge("favorites");
+  if (o.standingOrders) deleted.standing_orders = await purge("standing_orders");
+  // 상품: 수동/카페24를 각각 선택한 것만 삭제(선택 안 하면 보존).
+  if (o.products || o.cafe24Products) {
+    deleted.products = await purge("products",
+      (d) => d.id.startsWith("cafe24_") ? !o.cafe24Products : !o.products);
+  }
+  if (o.partners) deleted.partners = await purge("partners");
   // 운영자는 항상 보존. role=='partner'만 삭제.
-  if (opt.partnerUsers) {
+  if (o.partnerUsers) {
     deleted.users = await purge("users", (d) => d.data().role !== "partner");
   }
   logger.info("테스트 데이터 삭제", {by: req.auth?.uid, deleted});
