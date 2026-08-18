@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/services/invite_service.dart';
+import '../legal/legal_screen.dart';
 
 /// 거래처 초대 코드 가입 화면.
 /// 1단계: 초대 코드 입력 -> 거래처 확인 다이얼로그
@@ -25,6 +26,7 @@ class _SignupScreenState extends State<SignupScreen> {
   SignupStep _step = SignupStep.code;
   String? _partnerName;
   bool _loading = false;
+  bool _agreed = false; // 약관·개인정보처리방침 필수 동의
   String? _error;
 
   @override
@@ -120,6 +122,10 @@ class _SignupScreenState extends State<SignupScreen> {
     }
     if (pw != pw2) {
       setState(() => _error = '비밀번호가 일치하지 않습니다');
+      return;
+    }
+    if (!_agreed) {
+      setState(() => _error = '이용약관과 개인정보처리방침에 동의해야 가입할 수 있습니다');
       return;
     }
 
@@ -235,10 +241,48 @@ class _SignupScreenState extends State<SignupScreen> {
       _field(_pwCtrl, '비밀번호 (6자 이상)', TextInputType.text, true),
       const SizedBox(height: 12),
       _field(_pw2Ctrl, '비밀번호 확인', TextInputType.text, true),
+      const SizedBox(height: 8),
+      _consent(),
       if (_error != null) _errorText(),
       const SizedBox(height: 24),
       _submitButton('가입 완료', _submit),
     ];
+  }
+
+  /// 필수 동의 행: 체크박스 + 약관/처리방침 열람 링크.
+  Widget _consent() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Checkbox(
+          value: _agreed,
+          onChanged:
+              _loading ? null : (bool? v) => setState(() => _agreed = v ?? false),
+        ),
+        Expanded(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              _legalLink('이용약관', LegalDoc.terms),
+              const Text(' 및 '),
+              _legalLink('개인정보처리방침', LegalDoc.privacy),
+              const Text('에 동의합니다 (필수)'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _legalLink(String label, LegalDoc doc) {
+    return GestureDetector(
+      onTap: () => LegalScreen.open(context, doc),
+      child: Text(label,
+          style: const TextStyle(
+              color: Color(0xFF3B7A57),
+              decoration: TextDecoration.underline,
+              fontWeight: FontWeight.w600)),
+    );
   }
 
   Widget _field(TextEditingController ctrl, String label, TextInputType type,
