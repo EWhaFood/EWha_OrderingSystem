@@ -341,6 +341,9 @@ function normalizeOrder(
     partnerId: partner?.id ?? null,
     partnerName: partner?.name ?? o.billing_name ?? null,
     cafe24OrderId: o.order_id,
+    // 카페24 몰 주문은 온라인 선결제로 보고 결제완료 처리(미수금은 앱 외상 발주만 집계). EWOS-44
+    paymentStatus: "paid",
+    paidAt: Timestamp.now(),
     history: [{status: "new", byUid: "system", at: Timestamp.now()}],
     createdAt: Timestamp.fromDate(createdDate),
     desiredDeliveryDate: Timestamp.fromDate(defaultDelivery),

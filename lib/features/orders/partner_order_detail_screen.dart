@@ -57,6 +57,7 @@ class _DetailView extends StatefulWidget {
 
 class _DetailViewState extends State<_DetailView> {
   bool _reordering = false;
+  bool _requesting = false;
 
   model.Order get order => widget.order;
 
@@ -83,6 +84,7 @@ class _DetailViewState extends State<_DetailView> {
         children: <Widget>[
           _headerCard(),
           _itemTable(),
+          _paymentSection(),
           if (order.shippingAddress != null) _info('배송지', order.shippingAddress!),
           if (order.memo != null) _info('요청 메모', order.memo!),
           _historySection(),
@@ -207,6 +209,101 @@ class _DetailViewState extends State<_DetailView> {
         ],
       ),
     );
+  }
+
+  /// 결제 상태 + 입금 확인 요청 버튼. (EWOS-44)
+  Widget _paymentSection() {
+    if (order.status == OrderStatus.canceled) return const SizedBox.shrink();
+    if (order.isPaid) {
+      return _paymentBanner(Icons.check_circle_outline,
+          const Color(0xFF3B7A57), '결제완료', null);
+    }
+    if (order.isPaymentRequested) {
+      return _paymentBanner(Icons.hourglass_top_outlined,
+          const Color(0xFF8A6D2D), '입금 확인 요청됨', '운영자 확인을 기다리고 있어요.');
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text('결제',
+              style: TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+          const SizedBox(height: 4),
+          const Text('계좌로 입금하셨다면 아래 버튼으로 입금 확인을 요청해 주세요.',
+              style: TextStyle(fontSize: 13)),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _requesting ? null : _requestPayment,
+              icon: _requesting
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.payments_outlined),
+              label: const Text('입금 확인 요청'),
+              style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF3B7A57)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _paymentBanner(
+      IconData icon, Color color, String title, String? sub) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F4EF),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: color)),
+                if (sub != null)
+                  Text(sub,
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF8A8880))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _requestPayment() async {
+    setState(() => _requesting = true);
+    try {
+      await OrderService.requestPaymentConfirm(order.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('입금 확인을 요청했습니다. 운영자 확인을 기다려 주세요.')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('요청에 실패했습니다. 잠시 후 다시 시도해 주세요.')));
+      }
+    } finally {
+      if (mounted) setState(() => _requesting = false);
+    }
   }
 
   Widget _info(String label, String value) {

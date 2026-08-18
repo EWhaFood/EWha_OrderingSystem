@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/models/partner.dart';
 import '../../core/models/product.dart';
@@ -270,6 +271,16 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
   Future<void> _submit() async {
     setState(() => _submitting = true);
     try {
+      // 외상 한도 경고(EWOS-44): 미수금+이번 발주액이 한도 초과면 확인받는다(차단 아님).
+      if (widget.partner.hasCreditLimit) {
+        final int outstanding =
+            await OrderService.outstandingFor(widget.partner.id);
+        if (outstanding + _total > widget.partner.creditLimit &&
+            !await _confirmOverLimit(outstanding)) {
+          if (mounted) setState(() => _submitting = false);
+          return;
+        }
+      }
       final String orderNo = await OrderService.submit(
         uid: widget.uid,
         partnerId: widget.partner.id,
@@ -279,8 +290,9 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
         memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
         desiredDeliveryDate: _desiredDate,
       );
+      final int amount = _total; // Cart 비우기 전에 결제 금액을 캡처
       Cart.clear();
-      if (mounted) await _showDone(orderNo);
+      if (mounted) await _showDone(orderNo, amount);
     } on OrderSubmitException catch (e) {
       _showError(e.message);
     } catch (_) {
@@ -290,14 +302,82 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
     }
   }
 
-  Future<void> _showDone(String orderNo) async {
+  /// 외상 한도 초과 확인 다이얼로그. 계속하면 true. (EWOS-44, 경고만·차단 아님)
+  Future<bool> _confirmOverLimit(int outstanding) async {
+    final int after = outstanding + _total;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('외상 한도 초과'),
+        content: Text('현재 미수금 ${formatWon(outstanding)}에 이번 발주 '
+            '${formatWon(_total)}를 더하면 ${formatWon(after)}로 '
+            '한도 ${formatWon(widget.partner.creditLimit)}를 넘습니다.\n'
+            '그래도 발주할까요?'),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('계속 발주')),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  /// 발주 완료 안내. 계좌이체 즉시결제라 결제 금액과 입금 계좌를 함께 안내한다. (EWOS-44)
+  Future<void> _showDone(String orderNo, int amount) async {
+    final ({String bank, String number, String holder}) acct =
+        await OrderService.getDepositAccount();
+    if (!mounted) return;
+    final bool hasAcct = acct.number.isNotEmpty;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) => AlertDialog(
         title: const Text('발주가 접수되었습니다'),
-        content: Text('발주번호 $orderNo\n처리 상황은 알림으로 안내드립니다.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('발주번호 $orderNo',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+            const SizedBox(height: 12),
+            Text('결제 금액  ${formatWon(amount)}',
+                style: const TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (hasAcct) ...<Widget>[
+              const Text('아래 계좌로 입금해 주세요.',
+                  style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 4),
+              Text('${acct.bank} ${acct.number}',
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF3B7A57))),
+              Text('예금주 ${acct.holder}',
+                  style:
+                      const TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+            ] else
+              const Text('입금 계좌는 운영자에게 문의해 주세요.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF8A8880))),
+            const SizedBox(height: 8),
+            const Text('입금이 확인되면 발주가 처리됩니다.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+          ],
+        ),
         actions: <Widget>[
+          if (hasAcct)
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: acct.number));
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('계좌번호를 복사했습니다')));
+              },
+              child: const Text('계좌 복사'),
+            ),
           FilledButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('확인'),
