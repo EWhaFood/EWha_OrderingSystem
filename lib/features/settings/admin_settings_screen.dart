@@ -6,6 +6,7 @@ import '../../core/models/cafe24_status.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/fcm_service.dart';
 import '../../core/services/order_service.dart';
+import '../legal/legal_screen.dart';
 
 /// 운영자 설정 화면. 카페24 연동 상태, 알림 설정, 로그아웃을 담당한다.
 class AdminSettingsScreen extends StatefulWidget {
@@ -115,6 +116,20 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             subtitle: const Text('새로운 주문이 들어오면 알림을 받습니다'),
             value: _notify ?? false,
             onChanged: _notify == null ? null : _toggleNotify,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('이용약관'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => LegalScreen.open(context, LegalDoc.terms),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('개인정보처리방침'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => LegalScreen.open(context, LegalDoc.privacy),
           ),
           const Divider(height: 1),
           ListTile(
