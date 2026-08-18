@@ -323,16 +323,29 @@ class _PaymentCardState extends State<_PaymentCard> {
   @override
   Widget build(BuildContext context) {
     final bool paid = widget.order.isPaid;
-    final Color c =
-        paid ? const Color(0xFF3B7A57) : const Color(0xFFA36D2D);
+    final bool requested = widget.order.isPaymentRequested;
+    final Color c = paid
+        ? const Color(0xFF3B7A57)
+        : requested
+            ? const Color(0xFF185FA5)
+            : const Color(0xFFA36D2D);
+    final IconData icon = paid
+        ? Icons.check_circle_outline
+        : requested
+            ? Icons.notifications_active_outlined
+            : Icons.schedule;
+    final String label = paid
+        ? '결제완료'
+        : requested
+            ? '입금확인 요청됨'
+            : '미결제';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Row(
         children: <Widget>[
-          Icon(paid ? Icons.check_circle_outline : Icons.schedule,
-              size: 18, color: c),
+          Icon(icon, size: 18, color: c),
           const SizedBox(width: 8),
-          Text(paid ? '결제완료' : '미결제(외상)',
+          Text(label,
               style: TextStyle(
                   fontSize: 14, fontWeight: FontWeight.w500, color: c)),
           const Spacer(),

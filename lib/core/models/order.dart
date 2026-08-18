@@ -93,6 +93,7 @@ class Order {
     this.desiredDeliveryDate,
     this.paymentStatus = 'unpaid',
     this.paidAt,
+    this.paymentRequestedAt,
   });
 
   final String id;
@@ -125,13 +126,17 @@ class Order {
   /// 희망 배송일 (거래처 선택).
   final DateTime? desiredDeliveryDate;
 
-  /// 결제 상태: 'unpaid'(미결제) | 'paid'(결제완료). 미수금 산출 기준. (EWOS-44)
+  /// 결제 상태: 'unpaid'(미결제) | 'requested'(입금확인 요청됨) | 'paid'(결제완료). (EWOS-44)
   final String paymentStatus;
 
   /// 입금 확인(결제완료) 시각.
   final Timestamp? paidAt;
 
+  /// 거래처가 입금 확인을 요청한 시각.
+  final Timestamp? paymentRequestedAt;
+
   bool get isPaid => paymentStatus == 'paid';
+  bool get isPaymentRequested => paymentStatus == 'requested';
 
   factory Order.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final Map<String, dynamic> d = doc.data() ?? <String, dynamic>{};
@@ -161,6 +166,7 @@ class Order {
       desiredDeliveryDate: (d['desiredDeliveryDate'] as Timestamp?)?.toDate(),
       paymentStatus: d['paymentStatus'] as String? ?? 'unpaid',
       paidAt: d['paidAt'] as Timestamp?,
+      paymentRequestedAt: d['paymentRequestedAt'] as Timestamp?,
     );
   }
 
@@ -186,6 +192,7 @@ class Order {
           : null,
       'paymentStatus': paymentStatus,
       'paidAt': paidAt,
+      'paymentRequestedAt': paymentRequestedAt,
     };
   }
 }

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/order_status.dart';
@@ -193,6 +194,15 @@ class OrderService {
       number: d['depositAccount'] as String? ?? '',
       holder: d['depositHolder'] as String? ?? '',
     );
+  }
+
+  /// 입금 확인 요청(거래처). 서버가 발주를 'requested'로 표시하고 운영자에게 푸시한다. (EWOS-44)
+  static Future<void> requestPaymentConfirm(String orderId) async {
+    final FirebaseFunctions fns =
+        FirebaseFunctions.instanceFor(region: 'asia-northeast3');
+    await fns
+        .httpsCallable('requestPaymentConfirm')
+        .call<dynamic>(<String, dynamic>{'orderId': orderId});
   }
 
   /// 입금 계좌 설정(운영자).
