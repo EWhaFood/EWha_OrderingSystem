@@ -37,15 +37,22 @@ async function writeStatus(
   );
 }
 
+// 카페24 토큰 수명(고정): 액세스 2시간, 리프레시 2주.
+// 응답의 expires_at 문자열은 타임존이 없어(KST) UTC 서버에서 파싱하면 ~9h 어긋난다.
+// 그 값 대신 "수신 시점 + 고정 수명"으로 계산해 만료 판정이 실제와 일치하게 한다.
+const ACCESS_TTL_MS = 2 * 60 * 60 * 1000;
+const REFRESH_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
 /** 토큰 응답을 secrets/cafe24_{mallId}에 저장한다(규칙상 클라이언트 접근 불가). */
 async function saveToken(mallId: string, t: Cafe24Token): Promise<void> {
-  const accessExpiresAt = Timestamp.fromDate(new Date(t.expires_at));
+  const now = Date.now();
+  const accessExpiresAt = Timestamp.fromMillis(now + ACCESS_TTL_MS);
   await getFirestore().collection("secrets").doc(`cafe24_${mallId}`).set({
     mallId,
     accessToken: t.access_token,
     refreshToken: t.refresh_token,
     accessExpiresAt,
-    refreshExpiresAt: Timestamp.fromDate(new Date(t.refresh_token_expires_at)),
+    refreshExpiresAt: Timestamp.fromMillis(now + REFRESH_TTL_MS),
     updatedAt: FieldValue.serverTimestamp(),
   });
   // 연동 정상·만료 시각을 운영자 화면용 상태 문서에 반영한다.
@@ -225,6 +232,37 @@ async function ensureAccessToken(mallId: string): Promise<string | null> {
   return refreshed.access_token;
 }
 
+/** 저장된 refreshToken으로 강제 갱신해 새 access token을 얻는다(자가치유). 없으면 null. */
+async function forceRefreshToken(mallId: string): Promise<string | null> {
+  const snap = await getFirestore()
+    .collection("secrets").doc(`cafe24_${mallId}`).get();
+  const refresh = snap.data()?.refreshToken as string | undefined;
+  if (!refresh) return null;
+  return (await refreshOne(mallId, refresh)).access_token;
+}
+
+/**
+ * 카페24 Admin GET. 401(토큰 만료)이면 강제 갱신 후 1회만 재시도한다.
+ * 저장된 만료 메타가 실제와 어긋나 갱신이 스킵된 경우에도 스스로 복구한다.
+ */
+async function cafe24Get(mallId: string, path: string): Promise<Response> {
+  const url = `https://${mallId}.cafe24api.com/api/v2/admin/${path}`;
+  const call = (tk: string): Promise<Response> => fetch(url, {headers: {
+    "Authorization": `Bearer ${tk}`,
+    "X-Cafe24-Api-Version": API_VERSION,
+  }});
+  let token = await ensureAccessToken(mallId);
+  if (!token) throw new Error(`유효한 토큰 없음: ${mallId}`);
+  let resp = await call(token);
+  if (resp.status === 401) {
+    logger.warn(`카페24 401 → 토큰 강제 갱신 후 재시도: ${mallId}`);
+    token = await forceRefreshToken(mallId);
+    if (!token) throw new Error(`토큰 갱신 실패: ${mallId}`);
+    resp = await call(token);
+  }
+  return resp;
+}
+
 /** cafe24MemberId가 등록된 거래처를 회원ID→거래처 맵으로 만든다. */
 async function loadPartnerMap(): Promise<Map<string, PartnerRef>> {
   const snap = await getFirestore()
@@ -244,20 +282,13 @@ function kstDate(ms: number): string {
 
 /** 주문 한 페이지 조회. embed=items로 품목까지 함께 받는다. */
 async function fetchOrdersPage(
-  mallId: string, token: string,
-  startDate: string, endDate: string, offset: number,
+  mallId: string, startDate: string, endDate: string, offset: number,
 ): Promise<Cafe24Order[]> {
   const qs = new URLSearchParams({
     start_date: startDate, end_date: endDate,
     limit: String(PAGE_SIZE), offset: String(offset), embed: "items",
   });
-  const resp = await fetch(
-    `https://${mallId}.cafe24api.com/api/v2/admin/orders?${qs.toString()}`,
-    {headers: {
-      "Authorization": `Bearer ${token}`,
-      "X-Cafe24-Api-Version": API_VERSION,
-    }},
-  );
+  const resp = await cafe24Get(mallId, `orders?${qs.toString()}`);
   if (!resp.ok) throw new Error(`주문 조회 ${resp.status}: ${await resp.text()}`);
   const json = (await resp.json()) as {orders?: Cafe24Order[]};
   return json.orders ?? [];
@@ -265,16 +296,10 @@ async function fetchOrdersPage(
 
 /** 단일 주문 상세 조회(embed=items). 없으면 null. 웹훅의 신뢰 경계 재조회에 쓴다. */
 async function fetchOrder(
-  mallId: string, token: string, orderId: string,
+  mallId: string, orderId: string,
 ): Promise<Cafe24Order | null> {
-  const resp = await fetch(
-    `https://${mallId}.cafe24api.com/api/v2/admin/orders/` +
-      `${encodeURIComponent(orderId)}?embed=items`,
-    {headers: {
-      "Authorization": `Bearer ${token}`,
-      "X-Cafe24-Api-Version": API_VERSION,
-    }},
-  );
+  const resp = await cafe24Get(
+    mallId, `orders/${encodeURIComponent(orderId)}?embed=items`);
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`주문 상세 조회 ${resp.status}: ${await resp.text()}`);
   const json = (await resp.json()) as {order?: Cafe24Order};
@@ -344,8 +369,8 @@ async function upsertOrders(
 async function pollOrdersForMall(
   mallId: string, lastSyncMs: number, partners: Map<string, PartnerRef>,
 ): Promise<void> {
-  const token = await ensureAccessToken(mallId);
-  if (!token) return;
+  // 미연동 몰은 조용히 건너뛴다(에러·알림 방지). 실제 조회는 cafe24Get이 토큰을 관리한다.
+  if (!(await ensureAccessToken(mallId))) return;
   const now = Date.now();
   // 마지막 동기화 하루 전부터(장애 대비 겹침) 오늘까지. 중복은 create-only로 무해.
   const startDate = kstDate((lastSyncMs || now) - 24 * 60 * 60 * 1000);
@@ -355,7 +380,7 @@ async function pollOrdersForMall(
   let errorCount = 0; // [EWOS-23] 장애 임계치 감지용
   for (;;) {
     try {
-      const page = await fetchOrdersPage(mallId, token, startDate, endDate, offset);
+      const page = await fetchOrdersPage(mallId, startDate, endDate, offset);
       if (page.length === 0) break;
       inserted += await upsertOrders(mallId, page, partners);
       if (page.length < PAGE_SIZE) break;
@@ -417,18 +442,12 @@ interface Cafe24Product {
 
 /** 상품 한 페이지 조회. */
 async function fetchProductsPage(
-  mallId: string, token: string, offset: number,
+  mallId: string, offset: number,
 ): Promise<Cafe24Product[]> {
   const qs = new URLSearchParams({
     limit: String(PAGE_SIZE), offset: String(offset),
   });
-  const resp = await fetch(
-    `https://${mallId}.cafe24api.com/api/v2/admin/products?${qs.toString()}`,
-    {headers: {
-      "Authorization": `Bearer ${token}`,
-      "X-Cafe24-Api-Version": API_VERSION,
-    }},
-  );
+  const resp = await cafe24Get(mallId, `products?${qs.toString()}`);
   if (!resp.ok) throw new Error(`상품 조회 ${resp.status}: ${await resp.text()}`);
   const json = (await resp.json()) as {products?: Cafe24Product[]};
   return json.products ?? [];
@@ -466,12 +485,12 @@ async function upsertProducts(
 
 /** 한 몰의 전체 상품을 페이지네이션으로 동기화하고 상태에 시각을 남긴다. */
 async function syncProductsForMall(mallId: string): Promise<number> {
-  const token = await ensureAccessToken(mallId);
-  if (!token) return 0;
+  // 미연동 몰은 조용히 건너뛴다. 실제 조회는 cafe24Get이 토큰을 관리한다.
+  if (!(await ensureAccessToken(mallId))) return 0;
   let offset = 0;
   let total = 0;
   for (;;) {
-    const page = await fetchProductsPage(mallId, token, offset);
+    const page = await fetchProductsPage(mallId, offset);
     if (page.length === 0) break;
     total += await upsertProducts(mallId, page);
     if (page.length < PAGE_SIZE) break;
@@ -532,9 +551,8 @@ async function handleOrderWebhook(
     logger.info("cafe24 웹훅 수신(주문 식별자 없음 → 무시)", {event, mallId, orderId});
     return;
   }
-  const token = await ensureAccessToken(mallId);
-  if (!token) throw new Error(`유효한 토큰 없음: ${mallId}`);
-  const order = await fetchOrder(mallId, token, orderId);
+  const order = await fetchOrder(mallId, orderId); // cafe24Get이 토큰·401 재시도 처리
+
   if (!order) {
     logger.warn("cafe24 웹훅: 주문 상세를 찾지 못함", {mallId, orderId});
     return;
