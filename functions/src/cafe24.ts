@@ -194,8 +194,9 @@ async function refreshOne(
 // 주문 적재는 웹훅(cafe24Webhook, 저지연)이 우선하고, 유실 대비로 폴링이 누락을 보정한다.
 // 아래는 두 경로가 공유하는 조회·정규화·적재 로직이다.
 
-// Admin API 요구 버전(날짜형). 카페24가 버전을 올리면 여기만 수정한다.
-const API_VERSION = "2024-06-01";
+// Admin API 요구 버전(날짜형). 카페24가 구버전을 폐기하면 최신 기본값으로 갱신한다.
+// 2024-06-01은 폐기됨(400: "version not available") → 2026-03-01로 갱신.
+const API_VERSION = "2026-03-01";
 
 // 한 번에 조회할 주문 수(카페24 orders 최대 limit).
 const PAGE_SIZE = 100;
