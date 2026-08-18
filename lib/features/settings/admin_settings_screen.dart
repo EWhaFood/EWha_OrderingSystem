@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/models/cafe24_status.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/fcm_service.dart';
+import '../../core/services/maintenance_service.dart';
 import '../../core/services/order_service.dart';
 import '../legal/legal_screen.dart';
 
@@ -131,6 +133,16 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => LegalScreen.open(context, LegalDoc.privacy),
           ),
+          const Divider(height: 32),
+          const _SectionHeader(title: '테스트 도구'),
+          ListTile(
+            leading: const Icon(Icons.delete_sweep_outlined,
+                color: Color(0xFFA32D2D)),
+            title: const Text('테스트 데이터 삭제',
+                style: TextStyle(color: Color(0xFFA32D2D))),
+            subtitle: const Text('발주·즐겨찾기·수동상품 등 테스트 데이터를 지웁니다'),
+            onTap: _clearTestData,
+          ),
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.logout),
@@ -141,6 +153,108 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       ),
     );
   }
+
+  /// 테스트 데이터 삭제. 확인 다이얼로그에서 범위를 고른 뒤 서버 함수를 호출한다.
+  Future<void> _clearTestData() async {
+    final _ClearOpts? opts = await _confirmClear();
+    if (opts == null) return;
+    try {
+      final Map<String, int> r = await MaintenanceService.clearTestData(
+        partners: opts.partners,
+        partnerUsers: opts.partnerUsers,
+        cafe24Products: opts.cafe24Products,
+      );
+      final int total = r.values.fold<int>(0, (int a, int b) => a + b);
+      _toast('삭제 완료: 총 $total건 (${r.entries.map((MapEntry<String, int> e) => '${e.key} ${e.value}').join(', ')})');
+    } on FirebaseFunctionsException catch (e) {
+      _toast(e.code == 'failed-precondition'
+          ? '테스트 모드에서만 사용할 수 있습니다 (settings/testMode.enabled=true)'
+          : e.code == 'permission-denied'
+              ? '운영자만 사용할 수 있습니다'
+              : '삭제 실패: ${e.message ?? e.code}');
+    }
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 삭제 범위 선택 + 경고 다이얼로그. 확인 시 옵션을 반환한다.
+  Future<_ClearOpts?> _confirmClear() {
+    bool partners = false;
+    bool partnerUsers = false;
+    bool cafe24Products = false;
+    return showDialog<_ClearOpts>(
+      context: context,
+      builder: (BuildContext context) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setLocal) => AlertDialog(
+          title: const Text('테스트 데이터 삭제'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('발주·즐겨찾기·정기발주·수동 등록 상품이 삭제됩니다.\n'
+                  '되돌릴 수 없습니다. 추가로 지울 항목을 선택하세요.'),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('거래처(partners)도 삭제'),
+                value: partners,
+                onChanged: (bool? v) => setLocal(() => partners = v ?? false),
+              ),
+              CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('거래처 계정(users)도 삭제 · 운영자 보존'),
+                value: partnerUsers,
+                onChanged: (bool? v) =>
+                    setLocal(() => partnerUsers = v ?? false),
+              ),
+              CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('카페24 동기화 상품도 삭제'),
+                value: cafe24Products,
+                onChanged: (bool? v) =>
+                    setLocal(() => cafe24Products = v ?? false),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('취소')),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFA32D2D)),
+              onPressed: () => Navigator.pop(
+                  context,
+                  _ClearOpts(
+                      partners: partners,
+                      partnerUsers: partnerUsers,
+                      cafe24Products: cafe24Products)),
+              child: const Text('삭제'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 테스트 데이터 삭제 옵션.
+class _ClearOpts {
+  const _ClearOpts({
+    required this.partners,
+    required this.partnerUsers,
+    required this.cafe24Products,
+  });
+
+  final bool partners;
+  final bool partnerUsers;
+  final bool cafe24Products;
 }
 
 class _SectionHeader extends StatelessWidget {
