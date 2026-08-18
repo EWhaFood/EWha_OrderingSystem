@@ -184,7 +184,8 @@ async function refreshOne(
 }
 
 // ---- 주문 폴링 (EWOS-21) ----
-// 카페24는 주문 웹훅을 제공하지 않아, 스케줄러로 Admin API를 주기 조회해 적재한다.
+// 주문 적재는 웹훅(cafe24Webhook, 저지연)이 우선하고, 유실 대비로 폴링이 누락을 보정한다.
+// 아래는 두 경로가 공유하는 조회·정규화·적재 로직이다.
 
 // Admin API 요구 버전(날짜형). 카페24가 버전을 올리면 여기만 수정한다.
 const API_VERSION = "2024-06-01";
@@ -260,6 +261,24 @@ async function fetchOrdersPage(
   if (!resp.ok) throw new Error(`주문 조회 ${resp.status}: ${await resp.text()}`);
   const json = (await resp.json()) as {orders?: Cafe24Order[]};
   return json.orders ?? [];
+}
+
+/** 단일 주문 상세 조회(embed=items). 없으면 null. 웹훅의 신뢰 경계 재조회에 쓴다. */
+async function fetchOrder(
+  mallId: string, token: string, orderId: string,
+): Promise<Cafe24Order | null> {
+  const resp = await fetch(
+    `https://${mallId}.cafe24api.com/api/v2/admin/orders/` +
+      `${encodeURIComponent(orderId)}?embed=items`,
+    {headers: {
+      "Authorization": `Bearer ${token}`,
+      "X-Cafe24-Api-Version": API_VERSION,
+    }},
+  );
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`주문 상세 조회 ${resp.status}: ${await resp.text()}`);
+  const json = (await resp.json()) as {order?: Cafe24Order};
+  return json.order ?? null;
 }
 
 /** 카페24 주문을 공통 orders 스키마로 변환한다. member_id로 거래처를 매핑한다. */
@@ -363,7 +382,7 @@ async function pollOrdersForMall(
 }
 
 /**
- * 카페24 주문 폴링 (EWOS-21). 웹훅 미제공이라 10분마다 조회해 orders에 적재한다.
+ * 카페24 주문 폴링 (EWOS-23). 웹훅 유실 대비 10분마다 조회해 orders 누락을 보정한다.
  * 신규 적재분은 onOrderCreated 트리거가 운영자에게 자동 푸시한다.
  */
 export const pollCafe24Orders = onSchedule(
@@ -488,12 +507,60 @@ export const syncCafe24Products = onCall(
 );
 
 /**
- * 웹훅 수신 (상품 수정 등). 주문 수집은 웹훅 미제공이라 pollCafe24Orders가 담당한다.
+ * 웹훅 페이로드에서 몰·주문번호를 추출한다. 카페24 이벤트별로 위치가 달라 방어적으로 읽는다.
  */
-export const cafe24Webhook = onRequest(async (req, res) => {
-  logger.info("cafe24 webhook 수신", {
-    event: req.get("X-Cafe24-Webhook-Event"),
-    body: req.body,
-  });
-  res.status(200).send("ok");
-});
+function extractOrderRef(
+  body: Record<string, unknown>,
+): {mallId?: string; orderId?: string} {
+  const resource = (body.resource ?? {}) as Record<string, unknown>;
+  return {
+    mallId: (body.mall_id ?? resource.mall_id) as string | undefined,
+    orderId: (resource.order_id ?? body.order_id) as string | undefined,
+  };
+}
+
+/**
+ * 주문 웹훅 처리: 페이로드의 주문번호로 Admin API 상세를 재조회(신뢰 경계)해 멱등 적재한다.
+ * 본문을 신뢰하지 않으므로 위조 페이로드로 가짜 주문을 넣을 수 없다. 주문 식별자가 없으면
+ * 다른 이벤트(상품 등)로 보고 무시한다. 적재분은 onOrderCreated가 운영자에게 푸시한다.
+ */
+async function handleOrderWebhook(
+  event: string, body: Record<string, unknown>,
+): Promise<void> {
+  const {mallId, orderId} = extractOrderRef(body);
+  if (!mallId || !orderId) {
+    logger.info("cafe24 웹훅 수신(주문 식별자 없음 → 무시)", {event, mallId, orderId});
+    return;
+  }
+  const token = await ensureAccessToken(mallId);
+  if (!token) throw new Error(`유효한 토큰 없음: ${mallId}`);
+  const order = await fetchOrder(mallId, token, orderId);
+  if (!order) {
+    logger.warn("cafe24 웹훅: 주문 상세를 찾지 못함", {mallId, orderId});
+    return;
+  }
+  const partners = await loadPartnerMap();
+  const inserted = await upsertOrders(mallId, [order], partners);
+  logger.info(`cafe24 웹훅 주문 적재: ${mallId}/${orderId} (+${inserted})`);
+}
+
+/**
+ * 카페24 웹훅 수신 (EWOS-21). 주문 이벤트를 실시간(저지연) 경로로 적재한다.
+ * 무결성은 본문이 아니라 주문번호 재조회로 보장하고, upsert는 멱등(create-only)이라
+ * 폴링(pollCafe24Orders)과 중복돼도 안전하다. 처리 성공·실패와 무관하게 즉시 200을
+ * 반환해 카페24 재전송 폭주를 막고, 처리 실패분은 폴링이 보정한다.
+ *
+ * TODO(hardening): 카페24 웹훅 HMAC 서명 스펙 확정 후 요청 서명 검증 추가.
+ */
+export const cafe24Webhook = onRequest(
+  {secrets: [CLIENT_ID, CLIENT_SECRET]},
+  async (req, res) => {
+    const event = req.get("X-Cafe24-Webhook-Event") ?? "";
+    try {
+      await handleOrderWebhook(event, (req.body ?? {}) as Record<string, unknown>);
+    } catch (e) {
+      logger.error("cafe24 웹훅 처리 실패(폴링이 보정)", {event, error: String(e)});
+    }
+    res.status(200).send("ok");
+  }
+);
