@@ -91,6 +91,8 @@ class Order {
     this.processDate,
     this.isNextDay = false,
     this.desiredDeliveryDate,
+    this.paymentStatus = 'unpaid',
+    this.paidAt,
   });
 
   final String id;
@@ -123,6 +125,14 @@ class Order {
   /// 희망 배송일 (거래처 선택).
   final DateTime? desiredDeliveryDate;
 
+  /// 결제 상태: 'unpaid'(미결제) | 'paid'(결제완료). 미수금 산출 기준. (EWOS-44)
+  final String paymentStatus;
+
+  /// 입금 확인(결제완료) 시각.
+  final Timestamp? paidAt;
+
+  bool get isPaid => paymentStatus == 'paid';
+
   factory Order.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final Map<String, dynamic> d = doc.data() ?? <String, dynamic>{};
     final List<dynamic> rawItems = d['items'] as List<dynamic>? ?? <dynamic>[];
@@ -149,6 +159,8 @@ class Order {
       processDate: (d['processDate'] as Timestamp?)?.toDate(),
       isNextDay: d['isNextDay'] as bool? ?? false,
       desiredDeliveryDate: (d['desiredDeliveryDate'] as Timestamp?)?.toDate(),
+      paymentStatus: d['paymentStatus'] as String? ?? 'unpaid',
+      paidAt: d['paidAt'] as Timestamp?,
     );
   }
 
@@ -172,6 +184,8 @@ class Order {
       'desiredDeliveryDate': desiredDeliveryDate != null
           ? Timestamp.fromDate(desiredDeliveryDate!)
           : null,
+      'paymentStatus': paymentStatus,
+      'paidAt': paidAt,
     };
   }
 }

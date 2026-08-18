@@ -270,6 +270,16 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
   Future<void> _submit() async {
     setState(() => _submitting = true);
     try {
+      // 외상 한도 경고(EWOS-44): 미수금+이번 발주액이 한도 초과면 확인받는다(차단 아님).
+      if (widget.partner.hasCreditLimit) {
+        final int outstanding =
+            await OrderService.outstandingFor(widget.partner.id);
+        if (outstanding + _total > widget.partner.creditLimit &&
+            !await _confirmOverLimit(outstanding)) {
+          if (mounted) setState(() => _submitting = false);
+          return;
+        }
+      }
       final String orderNo = await OrderService.submit(
         uid: widget.uid,
         partnerId: widget.partner.id,
@@ -288,6 +298,30 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// 외상 한도 초과 확인 다이얼로그. 계속하면 true. (EWOS-44, 경고만·차단 아님)
+  Future<bool> _confirmOverLimit(int outstanding) async {
+    final int after = outstanding + _total;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('외상 한도 초과'),
+        content: Text('현재 미수금 ${formatWon(outstanding)}에 이번 발주 '
+            '${formatWon(_total)}를 더하면 ${formatWon(after)}로 '
+            '한도 ${formatWon(widget.partner.creditLimit)}를 넘습니다.\n'
+            '그래도 발주할까요?'),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('계속 발주')),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   Future<void> _showDone(String orderNo) async {

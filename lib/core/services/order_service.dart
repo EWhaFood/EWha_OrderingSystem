@@ -149,6 +149,39 @@ class OrderService {
     });
   }
 
+  /// 거래처의 현재 미수금(미결제·미취소 주문 합계)을 산출한다. (EWOS-44)
+  /// 취소·결제완료 주문은 제외. 인덱스 부담을 피해 partnerId만 조회 후 클라이언트에서 합산.
+  static Future<int> outstandingFor(String partnerId) async {
+    final QuerySnapshot<Map<String, dynamic>> snap = await _db
+        .collection('orders')
+        .where('partnerId', isEqualTo: partnerId)
+        .get();
+    int sum = 0;
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in snap.docs) {
+      final Map<String, dynamic> d = doc.data();
+      final bool paid = d['paymentStatus'] == 'paid';
+      final bool canceled = d['status'] == OrderStatus.canceled.code;
+      if (!paid && !canceled) sum += (d['totalAmount'] as num?)?.toInt() ?? 0;
+    }
+    return sum;
+  }
+
+  /// 입금 확인/취소(운영자). 주문 결제 상태를 설정한다.
+  static Future<void> setOrderPaid(String orderId, bool paid) async {
+    await _db.collection('orders').doc(orderId).update(<String, dynamic>{
+      'paymentStatus': paid ? 'paid' : 'unpaid',
+      'paidAt': paid ? Timestamp.now() : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// 거래처 외상 한도 설정(운영자). 0이면 무제한. (EWOS-44)
+  static Future<void> setCreditLimit(String partnerId, int limit) async {
+    await _db.collection('partners').doc(partnerId).update(<String, dynamic>{
+      'creditLimit': limit,
+    });
+  }
+
   /// 운영자 전용 내부 메모 저장. 거래처에게는 보이지 않는다.
   static Future<void> saveInternalMemo(String orderId, String memo) async {
     await _db.collection('orders').doc(orderId).update(<String, dynamic>{
@@ -242,6 +275,7 @@ class OrderService {
       'memo': memo,
       'processDate': Timestamp.fromDate(processDate),
       'isNextDay': isNextDay,
+      'paymentStatus': 'unpaid', // 앱 발주는 외상(미결제)으로 시작 (EWOS-44)
       'desiredDeliveryDate': desiredDeliveryDate != null
           ? Timestamp.fromDate(desiredDeliveryDate)
           : null,

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../core/models/partner.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/fcm_service.dart';
+import '../../core/services/order_service.dart';
+import '../../core/utils/format.dart';
 import '../legal/legal_screen.dart';
 import '../partners/address_sheet.dart';
 
@@ -63,6 +65,7 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
       body: ListView(
         children: <Widget>[
           _InfoCard(partner: widget.partner), // [신규] 상단 거래처 정보 카드 추가
+          _CreditCard(partner: widget.partner),
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.local_shipping_outlined),
@@ -286,6 +289,62 @@ class _PwInput {
 
   final String current;
   final String next;
+}
+
+/// 거래처 미수금·외상 한도 카드(읽기 전용). (EWOS-44)
+class _CreditCard extends StatelessWidget {
+  const _CreditCard({required this.partner});
+
+  final Partner partner;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+      future: OrderService.outstandingFor(partner.id),
+      builder: (BuildContext context, AsyncSnapshot<int> snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final int outstanding = snap.data!;
+        final bool over =
+            partner.hasCreditLimit && outstanding > partner.creditLimit;
+        final String limit =
+            partner.hasCreditLimit ? formatWon(partner.creditLimit) : '무제한';
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: over ? const Color(0xFFFCF0EF) : const Color(0xFFF5F4EF),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.account_balance_wallet_outlined,
+                  size: 20,
+                  color: over
+                      ? const Color(0xFFA32D2D)
+                      : const Color(0xFF3B7A57)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('미수금 ${formatWon(outstanding)}',
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.bold)),
+                    Text('외상 한도 $limit${over ? '  ⚠ 초과' : ''}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: over
+                                ? const Color(0xFFA32D2D)
+                                : const Color(0xFF8A8880))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// 거래처 정보 카드 (읽기 전용).

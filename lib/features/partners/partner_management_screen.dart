@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/models/partner.dart';
 import '../../core/services/invite_service.dart';
+import '../../core/services/order_service.dart';
+import '../../core/utils/format.dart';
 import 'address_sheet.dart';
 
 /// 운영자 거래처 관리. 거래처 등록, 초대 코드 발급, 활성/비활성을 담당한다.
@@ -179,6 +181,7 @@ class _PartnerTileState extends State<_PartnerTile> {
           if (p.cafe24MemberId != null)
             Text('카페24 ID: ${p.cafe24MemberId}',
                 style: const TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+          _CreditInfo(partner: p),
           const SizedBox(height: 6),
           // 버튼들이 화면 가로 폭을 넘지 않도록 Wrap으로 감쌈
           Wrap(
@@ -240,6 +243,39 @@ class _PartnerTileState extends State<_PartnerTile> {
   }
 }
 
+/// 거래처 미수금·외상 한도 표시. 미수금이 한도를 넘으면 경고색. (EWOS-44)
+class _CreditInfo extends StatelessWidget {
+  const _CreditInfo({required this.partner});
+
+  final Partner partner;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+      future: OrderService.outstandingFor(partner.id),
+      builder: (BuildContext context, AsyncSnapshot<int> snap) {
+        if (!snap.hasData) return const SizedBox(height: 4);
+        final int outstanding = snap.data!;
+        final bool over =
+            partner.hasCreditLimit && outstanding > partner.creditLimit;
+        final String limit =
+            partner.hasCreditLimit ? formatWon(partner.creditLimit) : '무제한';
+        return Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            '미수금 ${formatWon(outstanding)} / 한도 $limit${over ? '  ⚠ 초과' : ''}',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: over ? FontWeight.w600 : FontWeight.normal,
+                color:
+                    over ? const Color(0xFFA32D2D) : const Color(0xFF5F5E5A)),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// 거래처 등록/수정 폼. 거래처명만 필수, 나머지는 선택.
 class _PartnerForm extends StatefulWidget {
   const _PartnerForm({this.partner});
@@ -259,6 +295,10 @@ class _PartnerFormState extends State<_PartnerForm> {
       TextEditingController(text: widget.partner?.phone);
   late final TextEditingController _cafe24 =
       TextEditingController(text: widget.partner?.cafe24MemberId);
+  late final TextEditingController _limit = TextEditingController(
+      text: (widget.partner?.creditLimit ?? 0) == 0
+          ? ''
+          : widget.partner!.creditLimit.toString());
   bool _saving = false;
 
   @override
@@ -267,6 +307,7 @@ class _PartnerFormState extends State<_PartnerForm> {
     _manager.dispose();
     _phone.dispose();
     _cafe24.dispose();
+    _limit.dispose();
     super.dispose();
   }
 
@@ -281,6 +322,8 @@ class _PartnerFormState extends State<_PartnerForm> {
         'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         'cafe24MemberId':
             _cafe24.text.trim().isEmpty ? null : _cafe24.text.trim(),
+        'creditLimit':
+            int.tryParse(_limit.text.trim().replaceAll(',', '')) ?? 0,
       };
 
       if (widget.partner != null) {
@@ -323,6 +366,8 @@ class _PartnerFormState extends State<_PartnerForm> {
           _field(_manager, '담당자'),
           _field(_phone, '연락처', keyboard: TextInputType.phone),
           _field(_cafe24, '카페24 회원 ID (선택)'),
+          _field(_limit, '외상 한도 (원, 0/빈칸=무제한)',
+              keyboard: TextInputType.number),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _saving ? null : _save,
