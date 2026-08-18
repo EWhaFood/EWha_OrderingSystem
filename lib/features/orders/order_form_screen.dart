@@ -8,6 +8,7 @@ import '../../core/models/product.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/order_service.dart';
 import '../../core/utils/format.dart';
+import '../../core/widgets/product_thumb.dart';
 import 'cart.dart';
 import 'order_confirm_screen.dart';
 import 'standing_order_list_screen.dart';
@@ -286,6 +287,8 @@ class _ProductRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: <Widget>[
+              ProductThumb(imageUrl: product.imageUrl),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
