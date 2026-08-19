@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/order_status.dart';
@@ -149,6 +150,71 @@ class OrderService {
     });
   }
 
+  /// 거래처의 현재 미수금(미결제·미취소 주문 합계)을 산출한다. (EWOS-44)
+  /// 취소·결제완료 주문은 제외. 인덱스 부담을 피해 partnerId만 조회 후 클라이언트에서 합산.
+  static Future<int> outstandingFor(String partnerId) async {
+    final QuerySnapshot<Map<String, dynamic>> snap = await _db
+        .collection('orders')
+        .where('partnerId', isEqualTo: partnerId)
+        .get();
+    int sum = 0;
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in snap.docs) {
+      final Map<String, dynamic> d = doc.data();
+      final bool paid = d['paymentStatus'] == 'paid';
+      final bool canceled = d['status'] == OrderStatus.canceled.code;
+      if (!paid && !canceled) sum += (d['totalAmount'] as num?)?.toInt() ?? 0;
+    }
+    return sum;
+  }
+
+  /// 입금 확인/취소(운영자). 주문 결제 상태를 설정한다.
+  static Future<void> setOrderPaid(String orderId, bool paid) async {
+    await _db.collection('orders').doc(orderId).update(<String, dynamic>{
+      'paymentStatus': paid ? 'paid' : 'unpaid',
+      'paidAt': paid ? Timestamp.now() : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// 거래처 외상 한도 설정(운영자). 0이면 무제한. (EWOS-44)
+  static Future<void> setCreditLimit(String partnerId, int limit) async {
+    await _db.collection('partners').doc(partnerId).update(<String, dynamic>{
+      'creditLimit': limit,
+    });
+  }
+
+  /// 입금 계좌 정보(후정산 안내용). settings/global에 저장. (EWOS-44)
+  static Future<({String bank, String number, String holder})>
+      getDepositAccount() async {
+    final DocumentSnapshot<Map<String, dynamic>> doc =
+        await _db.collection('settings').doc('global').get();
+    final Map<String, dynamic> d = doc.data() ?? <String, dynamic>{};
+    return (
+      bank: d['depositBank'] as String? ?? '',
+      number: d['depositAccount'] as String? ?? '',
+      holder: d['depositHolder'] as String? ?? '',
+    );
+  }
+
+  /// 입금 확인 요청(거래처). 서버가 발주를 'requested'로 표시하고 운영자에게 푸시한다. (EWOS-44)
+  static Future<void> requestPaymentConfirm(String orderId) async {
+    final FirebaseFunctions fns =
+        FirebaseFunctions.instanceFor(region: 'asia-northeast3');
+    await fns
+        .httpsCallable('requestPaymentConfirm')
+        .call<dynamic>(<String, dynamic>{'orderId': orderId});
+  }
+
+  /// 입금 계좌 설정(운영자).
+  static Future<void> setDepositAccount(
+      String bank, String number, String holder) async {
+    await _db.collection('settings').doc('global').set(<String, dynamic>{
+      'depositBank': bank,
+      'depositAccount': number,
+      'depositHolder': holder,
+    }, SetOptions(merge: true));
+  }
+
   /// 운영자 전용 내부 메모 저장. 거래처에게는 보이지 않는다.
   static Future<void> saveInternalMemo(String orderId, String memo) async {
     await _db.collection('orders').doc(orderId).update(<String, dynamic>{
@@ -242,6 +308,7 @@ class OrderService {
       'memo': memo,
       'processDate': Timestamp.fromDate(processDate),
       'isNextDay': isNextDay,
+      'paymentStatus': 'unpaid', // 앱 발주는 외상(미결제)으로 시작 (EWOS-44)
       'desiredDeliveryDate': desiredDeliveryDate != null
           ? Timestamp.fromDate(desiredDeliveryDate)
           : null,

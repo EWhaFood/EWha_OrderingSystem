@@ -37,15 +37,22 @@ async function writeStatus(
   );
 }
 
+// 카페24 토큰 수명(고정): 액세스 2시간, 리프레시 2주.
+// 응답의 expires_at 문자열은 타임존이 없어(KST) UTC 서버에서 파싱하면 ~9h 어긋난다.
+// 그 값 대신 "수신 시점 + 고정 수명"으로 계산해 만료 판정이 실제와 일치하게 한다.
+const ACCESS_TTL_MS = 2 * 60 * 60 * 1000;
+const REFRESH_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
 /** 토큰 응답을 secrets/cafe24_{mallId}에 저장한다(규칙상 클라이언트 접근 불가). */
 async function saveToken(mallId: string, t: Cafe24Token): Promise<void> {
-  const accessExpiresAt = Timestamp.fromDate(new Date(t.expires_at));
+  const now = Date.now();
+  const accessExpiresAt = Timestamp.fromMillis(now + ACCESS_TTL_MS);
   await getFirestore().collection("secrets").doc(`cafe24_${mallId}`).set({
     mallId,
     accessToken: t.access_token,
     refreshToken: t.refresh_token,
     accessExpiresAt,
-    refreshExpiresAt: Timestamp.fromDate(new Date(t.refresh_token_expires_at)),
+    refreshExpiresAt: Timestamp.fromMillis(now + REFRESH_TTL_MS),
     updatedAt: FieldValue.serverTimestamp(),
   });
   // 연동 정상·만료 시각을 운영자 화면용 상태 문서에 반영한다.
@@ -184,10 +191,12 @@ async function refreshOne(
 }
 
 // ---- 주문 폴링 (EWOS-21) ----
-// 카페24는 주문 웹훅을 제공하지 않아, 스케줄러로 Admin API를 주기 조회해 적재한다.
+// 주문 적재는 웹훅(cafe24Webhook, 저지연)이 우선하고, 유실 대비로 폴링이 누락을 보정한다.
+// 아래는 두 경로가 공유하는 조회·정규화·적재 로직이다.
 
-// Admin API 요구 버전(날짜형). 카페24가 버전을 올리면 여기만 수정한다.
-const API_VERSION = "2024-06-01";
+// Admin API 요구 버전(날짜형). 카페24가 구버전을 폐기하면 최신 기본값으로 갱신한다.
+// 2024-06-01은 폐기됨(400: "version not available") → 2026-03-01로 갱신.
+const API_VERSION = "2026-03-01";
 
 // 한 번에 조회할 주문 수(카페24 orders 최대 limit).
 const PAGE_SIZE = 100;
@@ -224,6 +233,37 @@ async function ensureAccessToken(mallId: string): Promise<string | null> {
   return refreshed.access_token;
 }
 
+/** 저장된 refreshToken으로 강제 갱신해 새 access token을 얻는다(자가치유). 없으면 null. */
+async function forceRefreshToken(mallId: string): Promise<string | null> {
+  const snap = await getFirestore()
+    .collection("secrets").doc(`cafe24_${mallId}`).get();
+  const refresh = snap.data()?.refreshToken as string | undefined;
+  if (!refresh) return null;
+  return (await refreshOne(mallId, refresh)).access_token;
+}
+
+/**
+ * 카페24 Admin GET. 401(토큰 만료)이면 강제 갱신 후 1회만 재시도한다.
+ * 저장된 만료 메타가 실제와 어긋나 갱신이 스킵된 경우에도 스스로 복구한다.
+ */
+async function cafe24Get(mallId: string, path: string): Promise<Response> {
+  const url = `https://${mallId}.cafe24api.com/api/v2/admin/${path}`;
+  const call = (tk: string): Promise<Response> => fetch(url, {headers: {
+    "Authorization": `Bearer ${tk}`,
+    "X-Cafe24-Api-Version": API_VERSION,
+  }});
+  let token = await ensureAccessToken(mallId);
+  if (!token) throw new Error(`유효한 토큰 없음: ${mallId}`);
+  let resp = await call(token);
+  if (resp.status === 401) {
+    logger.warn(`카페24 401 → 토큰 강제 갱신 후 재시도: ${mallId}`);
+    token = await forceRefreshToken(mallId);
+    if (!token) throw new Error(`토큰 갱신 실패: ${mallId}`);
+    resp = await call(token);
+  }
+  return resp;
+}
+
 /** cafe24MemberId가 등록된 거래처를 회원ID→거래처 맵으로 만든다. */
 async function loadPartnerMap(): Promise<Map<string, PartnerRef>> {
   const snap = await getFirestore()
@@ -243,23 +283,28 @@ function kstDate(ms: number): string {
 
 /** 주문 한 페이지 조회. embed=items로 품목까지 함께 받는다. */
 async function fetchOrdersPage(
-  mallId: string, token: string,
-  startDate: string, endDate: string, offset: number,
+  mallId: string, startDate: string, endDate: string, offset: number,
 ): Promise<Cafe24Order[]> {
   const qs = new URLSearchParams({
     start_date: startDate, end_date: endDate,
     limit: String(PAGE_SIZE), offset: String(offset), embed: "items",
   });
-  const resp = await fetch(
-    `https://${mallId}.cafe24api.com/api/v2/admin/orders?${qs.toString()}`,
-    {headers: {
-      "Authorization": `Bearer ${token}`,
-      "X-Cafe24-Api-Version": API_VERSION,
-    }},
-  );
+  const resp = await cafe24Get(mallId, `orders?${qs.toString()}`);
   if (!resp.ok) throw new Error(`주문 조회 ${resp.status}: ${await resp.text()}`);
   const json = (await resp.json()) as {orders?: Cafe24Order[]};
   return json.orders ?? [];
+}
+
+/** 단일 주문 상세 조회(embed=items). 없으면 null. 웹훅의 신뢰 경계 재조회에 쓴다. */
+async function fetchOrder(
+  mallId: string, orderId: string,
+): Promise<Cafe24Order | null> {
+  const resp = await cafe24Get(
+    mallId, `orders/${encodeURIComponent(orderId)}?embed=items`);
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`주문 상세 조회 ${resp.status}: ${await resp.text()}`);
+  const json = (await resp.json()) as {order?: Cafe24Order};
+  return json.order ?? null;
 }
 
 /** 카페24 주문을 공통 orders 스키마로 변환한다. member_id로 거래처를 매핑한다. */
@@ -296,6 +341,9 @@ function normalizeOrder(
     partnerId: partner?.id ?? null,
     partnerName: partner?.name ?? o.billing_name ?? null,
     cafe24OrderId: o.order_id,
+    // 카페24 몰 주문은 온라인 선결제로 보고 결제완료 처리(미수금은 앱 외상 발주만 집계). EWOS-44
+    paymentStatus: "paid",
+    paidAt: Timestamp.now(),
     history: [{status: "new", byUid: "system", at: Timestamp.now()}],
     createdAt: Timestamp.fromDate(createdDate),
     desiredDeliveryDate: Timestamp.fromDate(defaultDelivery),
@@ -325,8 +373,8 @@ async function upsertOrders(
 async function pollOrdersForMall(
   mallId: string, lastSyncMs: number, partners: Map<string, PartnerRef>,
 ): Promise<void> {
-  const token = await ensureAccessToken(mallId);
-  if (!token) return;
+  // 미연동 몰은 조용히 건너뛴다(에러·알림 방지). 실제 조회는 cafe24Get이 토큰을 관리한다.
+  if (!(await ensureAccessToken(mallId))) return;
   const now = Date.now();
   // 마지막 동기화 하루 전부터(장애 대비 겹침) 오늘까지. 중복은 create-only로 무해.
   const startDate = kstDate((lastSyncMs || now) - 24 * 60 * 60 * 1000);
@@ -336,7 +384,7 @@ async function pollOrdersForMall(
   let errorCount = 0; // [EWOS-23] 장애 임계치 감지용
   for (;;) {
     try {
-      const page = await fetchOrdersPage(mallId, token, startDate, endDate, offset);
+      const page = await fetchOrdersPage(mallId, startDate, endDate, offset);
       if (page.length === 0) break;
       inserted += await upsertOrders(mallId, page, partners);
       if (page.length < PAGE_SIZE) break;
@@ -363,7 +411,7 @@ async function pollOrdersForMall(
 }
 
 /**
- * 카페24 주문 폴링 (EWOS-21). 웹훅 미제공이라 10분마다 조회해 orders에 적재한다.
+ * 카페24 주문 폴링 (EWOS-23). 웹훅 유실 대비 10분마다 조회해 orders 누락을 보정한다.
  * 신규 적재분은 onOrderCreated 트리거가 운영자에게 자동 푸시한다.
  */
 export const pollCafe24Orders = onSchedule(
@@ -398,18 +446,12 @@ interface Cafe24Product {
 
 /** 상품 한 페이지 조회. */
 async function fetchProductsPage(
-  mallId: string, token: string, offset: number,
+  mallId: string, offset: number,
 ): Promise<Cafe24Product[]> {
   const qs = new URLSearchParams({
     limit: String(PAGE_SIZE), offset: String(offset),
   });
-  const resp = await fetch(
-    `https://${mallId}.cafe24api.com/api/v2/admin/products?${qs.toString()}`,
-    {headers: {
-      "Authorization": `Bearer ${token}`,
-      "X-Cafe24-Api-Version": API_VERSION,
-    }},
-  );
+  const resp = await cafe24Get(mallId, `products?${qs.toString()}`);
   if (!resp.ok) throw new Error(`상품 조회 ${resp.status}: ${await resp.text()}`);
   const json = (await resp.json()) as {products?: Cafe24Product[]};
   return json.products ?? [];
@@ -447,12 +489,12 @@ async function upsertProducts(
 
 /** 한 몰의 전체 상품을 페이지네이션으로 동기화하고 상태에 시각을 남긴다. */
 async function syncProductsForMall(mallId: string): Promise<number> {
-  const token = await ensureAccessToken(mallId);
-  if (!token) return 0;
+  // 미연동 몰은 조용히 건너뛴다. 실제 조회는 cafe24Get이 토큰을 관리한다.
+  if (!(await ensureAccessToken(mallId))) return 0;
   let offset = 0;
   let total = 0;
   for (;;) {
-    const page = await fetchProductsPage(mallId, token, offset);
+    const page = await fetchProductsPage(mallId, offset);
     if (page.length === 0) break;
     total += await upsertProducts(mallId, page);
     if (page.length < PAGE_SIZE) break;
@@ -488,12 +530,59 @@ export const syncCafe24Products = onCall(
 );
 
 /**
- * 웹훅 수신 (상품 수정 등). 주문 수집은 웹훅 미제공이라 pollCafe24Orders가 담당한다.
+ * 웹훅 페이로드에서 몰·주문번호를 추출한다. 카페24 이벤트별로 위치가 달라 방어적으로 읽는다.
  */
-export const cafe24Webhook = onRequest(async (req, res) => {
-  logger.info("cafe24 webhook 수신", {
-    event: req.get("X-Cafe24-Webhook-Event"),
-    body: req.body,
-  });
-  res.status(200).send("ok");
-});
+function extractOrderRef(
+  body: Record<string, unknown>,
+): {mallId?: string; orderId?: string} {
+  const resource = (body.resource ?? {}) as Record<string, unknown>;
+  return {
+    mallId: (body.mall_id ?? resource.mall_id) as string | undefined,
+    orderId: (resource.order_id ?? body.order_id) as string | undefined,
+  };
+}
+
+/**
+ * 주문 웹훅 처리: 페이로드의 주문번호로 Admin API 상세를 재조회(신뢰 경계)해 멱등 적재한다.
+ * 본문을 신뢰하지 않으므로 위조 페이로드로 가짜 주문을 넣을 수 없다. 주문 식별자가 없으면
+ * 다른 이벤트(상품 등)로 보고 무시한다. 적재분은 onOrderCreated가 운영자에게 푸시한다.
+ */
+async function handleOrderWebhook(
+  event: string, body: Record<string, unknown>,
+): Promise<void> {
+  const {mallId, orderId} = extractOrderRef(body);
+  if (!mallId || !orderId) {
+    logger.info("cafe24 웹훅 수신(주문 식별자 없음 → 무시)", {event, mallId, orderId});
+    return;
+  }
+  const order = await fetchOrder(mallId, orderId); // cafe24Get이 토큰·401 재시도 처리
+
+  if (!order) {
+    logger.warn("cafe24 웹훅: 주문 상세를 찾지 못함", {mallId, orderId});
+    return;
+  }
+  const partners = await loadPartnerMap();
+  const inserted = await upsertOrders(mallId, [order], partners);
+  logger.info(`cafe24 웹훅 주문 적재: ${mallId}/${orderId} (+${inserted})`);
+}
+
+/**
+ * 카페24 웹훅 수신 (EWOS-21). 주문 이벤트를 실시간(저지연) 경로로 적재한다.
+ * 무결성은 본문이 아니라 주문번호 재조회로 보장하고, upsert는 멱등(create-only)이라
+ * 폴링(pollCafe24Orders)과 중복돼도 안전하다. 처리 성공·실패와 무관하게 즉시 200을
+ * 반환해 카페24 재전송 폭주를 막고, 처리 실패분은 폴링이 보정한다.
+ *
+ * TODO(hardening): 카페24 웹훅 HMAC 서명 스펙 확정 후 요청 서명 검증 추가.
+ */
+export const cafe24Webhook = onRequest(
+  {secrets: [CLIENT_ID, CLIENT_SECRET]},
+  async (req, res) => {
+    const event = req.get("X-Cafe24-Webhook-Event") ?? "";
+    try {
+      await handleOrderWebhook(event, (req.body ?? {}) as Record<string, unknown>);
+    } catch (e) {
+      logger.error("cafe24 웹훅 처리 실패(폴링이 보정)", {event, error: String(e)});
+    }
+    res.status(200).send("ok");
+  }
+);

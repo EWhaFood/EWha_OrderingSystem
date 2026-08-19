@@ -72,6 +72,7 @@ class _DetailView extends StatelessWidget {
         children: <Widget>[
           _PartnerCard(order: order),
           _itemTable(),
+          if (order.status != OrderStatus.canceled) _PaymentCard(order: order),
           if (order.desiredDeliveryDate != null)
             _info('희망 배송일',
                 '${order.desiredDeliveryDate!.year}.${order.desiredDeliveryDate!.month}.${order.desiredDeliveryDate!.day}'),
@@ -285,6 +286,72 @@ class _InternalMemoState extends State<_InternalMemo> {
                 onPressed: _saving ? null : _save,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 결제(외상) 상태 카드. 운영자가 입금확인/취소로 결제완료 여부를 토글한다. (EWOS-44)
+class _PaymentCard extends StatefulWidget {
+  const _PaymentCard({required this.order});
+
+  final model.Order order;
+
+  @override
+  State<_PaymentCard> createState() => _PaymentCardState();
+}
+
+class _PaymentCardState extends State<_PaymentCard> {
+  bool _busy = false;
+
+  Future<void> _toggle() async {
+    setState(() => _busy = true);
+    try {
+      await OrderService.setOrderPaid(widget.order.id, !widget.order.isPaid);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('처리에 실패했습니다')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool paid = widget.order.isPaid;
+    final bool requested = widget.order.isPaymentRequested;
+    final Color c = paid
+        ? const Color(0xFF3B7A57)
+        : requested
+            ? const Color(0xFF185FA5)
+            : const Color(0xFFA36D2D);
+    final IconData icon = paid
+        ? Icons.check_circle_outline
+        : requested
+            ? Icons.notifications_active_outlined
+            : Icons.schedule;
+    final String label = paid
+        ? '결제완료'
+        : requested
+            ? '입금확인 요청됨'
+            : '미결제';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: c),
+          const SizedBox(width: 8),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w500, color: c)),
+          const Spacer(),
+          OutlinedButton(
+            onPressed: _busy ? null : _toggle,
+            child: Text(paid ? '입금취소' : '입금확인'),
           ),
         ],
       ),

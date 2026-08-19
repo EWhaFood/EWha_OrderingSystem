@@ -46,6 +46,7 @@ class Partner {
     this.phone,
     this.cafe24MemberId,
     this.active = true,
+    this.creditLimit = 0,
     this.addresses = const <PartnerAddress>[],
   });
 
@@ -59,7 +60,12 @@ class Partner {
 
   /// false면 로그인 차단.
   final bool active;
+
+  /// 외상 한도(원). 0이면 한도 미설정(무제한). 미수금이 이 값을 넘으면 발주 시 경고. (EWOS-44)
+  final int creditLimit;
   final List<PartnerAddress> addresses;
+
+  bool get hasCreditLimit => creditLimit > 0;
 
   PartnerAddress? get defaultAddress {
     for (final PartnerAddress a in addresses) {
@@ -78,6 +84,7 @@ class Partner {
       phone: data['phone'] as String?,
       cafe24MemberId: data['cafe24MemberId'] as String?,
       active: data['active'] as bool? ?? true,
+      creditLimit: (data['creditLimit'] as num?)?.toInt() ?? 0,
       addresses: rawAddresses
           .map((dynamic a) => PartnerAddress.fromMap(a as Map<String, dynamic>))
           .toList(),
@@ -91,6 +98,7 @@ class Partner {
       'phone': phone,
       'cafe24MemberId': cafe24MemberId,
       'active': active,
+      'creditLimit': creditLimit,
       'addresses': addresses.map((PartnerAddress a) => a.toMap()).toList(),
     };
   }

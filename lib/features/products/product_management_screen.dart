@@ -6,6 +6,7 @@ import '../../core/models/cafe24_status.dart';
 import '../../core/models/product.dart';
 import '../../core/services/cafe24_service.dart';
 import '../../core/utils/format.dart';
+import '../../core/widgets/product_thumb.dart';
 
 /// 운영자 상품 관리 (EWOS-23). 카페24 동기화 상태·수동 동기화 + 품목별 발주 가능/불가.
 /// products는 카페24에서 복제되며, enabled(발주 가능)만 이 화면에서 운영자가 관리한다.
@@ -272,6 +273,8 @@ class _ProductRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: <Widget>[
+          ProductThumb(imageUrl: p.imageUrl),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

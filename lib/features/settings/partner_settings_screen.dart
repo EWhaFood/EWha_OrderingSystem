@@ -1,9 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/models/partner.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/fcm_service.dart';
+import '../../core/services/order_service.dart';
+import '../../core/utils/format.dart';
+import '../legal/legal_screen.dart';
 import '../partners/address_sheet.dart';
 
 /// 거래처 본인 설정. 배송지 관리·알림 수신·비밀번호 변경·로그아웃.
@@ -62,6 +66,7 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
       body: ListView(
         children: <Widget>[
           _InfoCard(partner: widget.partner), // [신규] 상단 거래처 정보 카드 추가
+          _CreditCard(partner: widget.partner),
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.local_shipping_outlined),
@@ -87,13 +92,105 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('이용약관'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => LegalScreen.open(context, LegalDoc.terms),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('개인정보처리방침'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => LegalScreen.open(context, LegalDoc.privacy),
+          ),
+          const Divider(height: 1),
+          ListTile(
             leading: const Icon(Icons.logout),
             title: const Text('로그아웃'),
             onTap: () => logout(widget.uid),
           ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.no_accounts_outlined,
+                color: Color(0xFFA32D2D)),
+            title: const Text('계정 삭제',
+                style: TextStyle(color: Color(0xFFA32D2D))),
+            subtitle: const Text('계정과 개인정보가 삭제되며 되돌릴 수 없습니다'),
+            onTap: _deleteAccount,
+          ),
         ],
       ),
     );
+  }
+
+  /// 계정 삭제(탈퇴). 재인증(비밀번호)으로 본인을 확인한 뒤 서버에서 삭제한다.
+  Future<void> _deleteAccount() async {
+    final String? password = await _confirmDelete();
+    if (password == null) return;
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String? email = user?.email;
+    if (user == null || email == null) return;
+    // 1) 재인증: 실패하면 삭제를 진행하지 않는다.
+    try {
+      final AuthCredential cred =
+          EmailAuthProvider.credential(email: email, password: password);
+      await user.reauthenticateWithCredential(cred);
+    } on FirebaseAuthException catch (e) {
+      _toast(e.code == 'wrong-password' || e.code == 'invalid-credential'
+          ? '비밀번호가 올바르지 않습니다'
+          : '재인증에 실패했습니다 (${e.code})');
+      return;
+    }
+    // 2) 서버 삭제. 부분 실패 시 좀비 세션을 남기지 않도록 로그아웃한다.
+    try {
+      await deleteAccount(widget.uid); // 로그아웃되면 인증 리스너가 로그인 화면으로 전환
+    } catch (e) {
+      _toast('계정 삭제에 실패했습니다. 다시 로그인 후 시도해 주세요.');
+      await logout(widget.uid);
+    }
+  }
+
+  /// 삭제 경고 + 비밀번호 확인 다이얼로그. 확인 시 입력한 비밀번호를 반환한다.
+  Future<String?> _confirmDelete() async {
+    final TextEditingController pwCtrl = TextEditingController();
+    try {
+      return await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('계정 삭제'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('계정과 개인정보(이메일·알림 설정)가 삭제됩니다.\n'
+                '이 작업은 되돌릴 수 없습니다.\n'
+                '확인을 위해 비밀번호를 입력해 주세요.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pwCtrl,
+              obscureText: true,
+              decoration:
+                  const InputDecoration(labelText: '비밀번호', isDense: true),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('취소')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFA32D2D)),
+            onPressed: () => Navigator.pop(context, pwCtrl.text),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    } finally {
+      pwCtrl.dispose();
+    }
   }
 
   // 비밀번호 변경 프로세스 (재인증 후 새 비밀번호 설정)
@@ -127,11 +224,12 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
     }
   }
 
-  Future<_PwInput?> _promptPassword() {
+  Future<_PwInput?> _promptPassword() async {
     final TextEditingController curCtrl = TextEditingController();
     final TextEditingController newCtrl = TextEditingController();
     String? err;
-    return showDialog<_PwInput>(
+    try {
+      return await showDialog<_PwInput>(
       context: context,
       builder: (BuildContext context) => StatefulBuilder(
         builder: (BuildContext context, StateSetter setLocal) => AlertDialog(
@@ -179,6 +277,10 @@ class _PartnerSettingsScreenState extends State<PartnerSettingsScreen> {
         ),
       ),
     );
+    } finally {
+      curCtrl.dispose();
+      newCtrl.dispose();
+    }
   }
 }
 
@@ -188,6 +290,106 @@ class _PwInput {
 
   final String current;
   final String next;
+}
+
+/// 거래처 미수금·외상 한도 카드(읽기 전용). (EWOS-44)
+class _CreditCard extends StatelessWidget {
+  const _CreditCard({required this.partner});
+
+  final Partner partner;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+      future: OrderService.outstandingFor(partner.id),
+      builder: (BuildContext context, AsyncSnapshot<int> snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final int outstanding = snap.data!;
+        final bool over =
+            partner.hasCreditLimit && outstanding > partner.creditLimit;
+        final String limit =
+            partner.hasCreditLimit ? formatWon(partner.creditLimit) : '무제한';
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: over ? const Color(0xFFFCF0EF) : const Color(0xFFF5F4EF),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.account_balance_wallet_outlined,
+                  size: 20,
+                  color: over
+                      ? const Color(0xFFA32D2D)
+                      : const Color(0xFF3B7A57)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('미수금 ${formatWon(outstanding)}',
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.bold)),
+                    Text('외상 한도 $limit${over ? '  ⚠ 초과' : ''}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: over
+                                ? const Color(0xFFA32D2D)
+                                : const Color(0xFF8A8880))),
+                    if (outstanding > 0) const _DepositInfo(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 후정산 입금 계좌 안내(거래처용). 미수금이 있을 때만 노출하고 계좌 복사를 지원한다.
+class _DepositInfo extends StatelessWidget {
+  const _DepositInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<({String bank, String number, String holder})>(
+      future: OrderService.getDepositAccount(),
+      builder: (BuildContext context,
+          AsyncSnapshot<({String bank, String number, String holder})> snap) {
+        if (!snap.hasData || snap.data!.number.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final ({String bank, String number, String holder}) a = snap.data!;
+        final String line = '${a.bank} ${a.number} (${a.holder})';
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text('입금 계좌  $line',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF3B7A57))),
+              ),
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: a.number));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('계좌번호를 복사했습니다')));
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.copy, size: 16, color: Color(0xFF3B7A57)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// 거래처 정보 카드 (읽기 전용).
