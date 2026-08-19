@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/order_status.dart';
+import '../../core/models/inquiry.dart';
 import '../../core/models/order.dart' as model;
 import '../../core/models/partner.dart';
+import '../../core/services/inquiry_service.dart';
 import '../../core/services/order_service.dart';
 import '../../core/utils/format.dart';
+import '../inquiries/chat_screen.dart';
 import 'widgets/order_badges.dart';
 
 /// 운영자 발주 상세. 내용 확인과 상태 변경의 중심 화면.
@@ -461,34 +464,63 @@ class _ActionBarState extends State<_ActionBar> {
   @override
   Widget build(BuildContext context) {
     final List<OrderStatus> allowed = widget.order.status.allowedTransitions;
-    if (allowed.isEmpty) {
-      final String msg = widget.order.status == OrderStatus.canceled
-          ? '취소된 발주입니다'
-          : '처리 완료된 발주입니다';
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(msg,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF8A8880))),
-        ),
-      );
-    }
-    // 보류는 부수 액션이라 왼쪽에 작게, 주 전이는 오른쪽에 강조해 배치한다.
-    final bool hasHold = allowed.contains(OrderStatus.hold);
+    
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Row(
-          children: <Widget>[
-            if (hasHold) ...<Widget>[
-              Expanded(child: _secondaryButton(OrderStatus.hold)),
-              const SizedBox(width: 8),
-            ],
-            ...allowed
-                .where((OrderStatus s) => s != OrderStatus.hold)
-                .map((OrderStatus s) =>
-                    Expanded(flex: 2, child: _primaryButton(s))),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            StreamBuilder<Inquiry?>(
+              stream: InquiryService.getInquiry(widget.order.id),
+              builder: (context, snapshot) {
+                final int unread = snapshot.data?.unreadCountOperator ?? 0;
+                return OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        orderId: widget.order.id,
+                        orderNo: widget.order.orderNo,
+                        myId: widget.uid,
+                        myRole: 'operator',
+                      ),
+                    ),
+                  ),
+                  icon: Badge.count(
+                    count: unread,
+                    isLabelVisible: unread > 0,
+                    child: const Icon(Icons.chat_outlined),
+                  ),
+                  label: const Text('거래처와 문의 채팅'),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            if (allowed.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                    widget.order.status == OrderStatus.canceled
+                        ? '취소된 발주입니다'
+                        : '처리 완료된 발주입니다',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Color(0xFF8A8880))),
+              )
+            else
+              Row(
+                children: <Widget>[
+                  if (allowed.contains(OrderStatus.hold)) ...<Widget>[
+                    Expanded(child: _secondaryButton(OrderStatus.hold)),
+                    const SizedBox(width: 8),
+                  ],
+                  ...allowed
+                      .where((OrderStatus s) => s != OrderStatus.hold)
+                      .map((OrderStatus s) =>
+                          Expanded(flex: 2, child: _primaryButton(s))),
+                ],
+              ),
           ],
         ),
       ),

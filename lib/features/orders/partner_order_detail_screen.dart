@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/constants/order_status.dart';
+import '../../core/models/inquiry.dart';
 import '../../core/models/order.dart' as model;
 import '../../core/models/product.dart';
+import '../../core/services/inquiry_service.dart';
 import '../../core/services/order_service.dart';
 import '../../core/utils/format.dart';
+import '../inquiries/chat_screen.dart';
 import 'cart.dart';
 import 'partner_home_screen.dart';
 import 'widgets/order_badges.dart';
@@ -381,6 +384,32 @@ class _DetailViewState extends State<_DetailView> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            StreamBuilder<Inquiry?>(
+              stream: InquiryService.getInquiry(order.id),
+              builder: (context, snapshot) {
+                final int unread = snapshot.data?.unreadCountPartner ?? 0;
+                return OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        orderId: order.id,
+                        orderNo: order.orderNo,
+                        myId: _uid,
+                        myRole: 'partner',
+                      ),
+                    ),
+                  ),
+                  icon: Badge.count(
+                    count: unread,
+                    isLabelVisible: unread > 0,
+                    child: const Icon(Icons.chat_outlined),
+                  ),
+                  label: const Text('운영자에게 문의하기'),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
             if (cancelable) ...<Widget>[
               OutlinedButton(
                 onPressed: _reordering ? null : _confirmCancel,

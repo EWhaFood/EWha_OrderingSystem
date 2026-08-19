@@ -136,6 +136,19 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 발주별 문의 채팅(Inquiries): 운영자와 해당 발주 거래처만 접근 가능.
+    match /inquiries/{orderId} {
+      function canAccessInquiry() {
+        let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
+        return isOperator() || (isSignedIn() && order.partnerId == myPartnerId());
+      }
+      allow read, write: if canAccessInquiry();
+
+      match /messages/{messageId} {
+        allow read, write: if canAccessInquiry();
+      }
+    }
+
     // 카페24 토큰 등 시크릿: 클라이언트 접근 전면 금지 (Functions Admin SDK 전용).
     match /secrets/{doc} {
       allow read, write: if false;

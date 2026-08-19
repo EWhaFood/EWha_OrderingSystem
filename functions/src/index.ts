@@ -8,6 +8,9 @@ initializeApp();
 // 발주 알림 FCM 트리거 (EWOS-16)
 export {onOrderCreated, onOrderStatusChanged} from "./notifications";
 
+// 발주별 문의 채팅 (EWOS-Inquiry)
+export {onMessageCreated} from "./inquiries";
+
 // 초대 코드 발급·가입 (EWOS-24)
 export {issueInvite, redeemInvite} from "./invites";
 

@@ -4,7 +4,7 @@ import {getMessaging, BatchResponse} from "firebase-admin/messaging";
 import * as logger from "firebase-functions/logger";
 
 /** 토큰과 그 소유자 uid. 무효 토큰을 어느 users 문서에서 지울지 알기 위해 uid를 함께 들고 다닌다. */
-interface TokenRef {
+export interface TokenRef {
   uid: string;
   token: string;
 }
@@ -33,7 +33,7 @@ function orderSummary(order: DocumentData): string {
 }
 
 /** field==value 인 users의 FCM 토큰을 uid와 함께 모은다. */
-async function collectTokens(
+export async function collectTokens(
   field: "role" | "partnerId",
   value: string,
 ): Promise<TokenRef[]> {
@@ -63,7 +63,7 @@ async function pruneInvalid(refs: TokenRef[], res: BatchResponse): Promise<void>
 }
 
 /** 멀티캐스트 발송 + 무효 토큰 정리. notification(백그라운드 표시)과 data(라우팅)를 함께 보낸다. */
-async function sendAndPrune(
+export async function sendAndPrune(
   refs: TokenRef[],
   title: string,
   body: string,
@@ -85,23 +85,23 @@ async function sendAndPrune(
   logger.info(`FCM ${title}: ${res.successCount}/${refs.length} 성공`);
   await pruneInvalid(refs, res);
 
-  // Firestore에 알림 이력 기록
-  if (refs.length > 0) {
-    const db = getFirestore();
-    const batch = db.batch();
-    for (const ref of refs) {
-      const notiRef = db.collection("notifications").doc();
-      batch.set(notiRef, {
-        uid: ref.uid,
-        title,
-        body,
-        orderId: orderId ?? null,
-        isRead: false,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    }
-    await batch.commit();
+  // Firestore에 알림 이력 기록 (유저당 1회만 기록하여 목록 중복 방지)
+  const db = getFirestore();
+  const batch = db.batch();
+  const uniqueUids = Array.from(new Set(refs.map((r) => r.uid)));
+
+  for (const uid of uniqueUids) {
+    const notiRef = db.collection("notifications").doc();
+    batch.set(notiRef, {
+      uid: uid,
+      title,
+      body,
+      orderId: orderId ?? null,
+      isRead: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
   }
+  await batch.commit();
 }
 
 /** 운영자들에게 긴급 장애/시스템 알림을 보낸다. */
