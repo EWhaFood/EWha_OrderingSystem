@@ -34,6 +34,9 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 
+  /// 목록형(row) ↔ 격자형(grid) 보기 전환. 기본은 목록형.
+  bool _grid = false;
+
   /// 마지막으로 구독한 상품 목록. 확인 화면에 넘겨 다시 조회하지 않도록 보관한다.
   List<Product> _latest = <Product>[];
 
@@ -77,6 +80,11 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
           ],
         ),
         actions: <Widget>[
+          IconButton(
+            icon: Icon(_grid ? Icons.view_list : Icons.grid_view),
+            tooltip: _grid ? '목록 보기' : '격자 보기',
+            onPressed: () => setState(() => _grid = !_grid),
+          ),
           IconButton(
             icon: const Icon(Icons.star_outline),
             tooltip: '즐겨찾기',
@@ -142,13 +150,32 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
                 : '"$_query" 검색 결과가 없습니다'),
           );
         }
-        return ListView.separated(
-          itemCount: products.length,
-          separatorBuilder: (_, _) => const Divider(height: 1),
-          itemBuilder: (BuildContext context, int i) =>
-              _ProductRow(product: products[i]),
-        );
+        return _grid ? _gridView(products) : _listView(products);
       },
+    );
+  }
+
+  Widget _listView(List<Product> products) {
+    return ListView.separated(
+      itemCount: products.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (BuildContext context, int i) =>
+          _ProductRow(product: products[i]),
+    );
+  }
+
+  Widget _gridView(List<Product> products) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.66,
+      ),
+      itemCount: products.length,
+      itemBuilder: (BuildContext context, int i) =>
+          _ProductCard(product: products[i]),
     );
   }
 
@@ -271,9 +298,76 @@ class _CutoffBannerState extends State<_CutoffBanner> {
   }
 }
 
-/// 품목 한 줄: 이름·단가 + 수량 스테퍼. 수량 숫자를 탭하면 직접 입력할 수 있다.
+/// 품목 한 줄(목록형): 이름·단가 + 수량 스테퍼.
 class _ProductRow extends StatelessWidget {
   const _ProductRow({required this.product});
+
+  final Product product;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: <Widget>[
+          ProductThumb(imageUrl: product.imageUrl),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(product.name, style: const TextStyle(fontSize: 14)),
+                const SizedBox(height: 2),
+                Text('${formatWon(product.price)} / 개',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF5F5E5A))),
+              ],
+            ),
+          ),
+          _QtyStepper(product: product),
+        ],
+      ),
+    );
+  }
+}
+
+/// 품목 카드(격자형): 썸네일 위, 이름·단가·수량 스테퍼 아래.
+class _ProductCard extends StatelessWidget {
+  const _ProductCard({required this.product});
+
+  final Product product;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFEDECE6)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Center(child: ProductThumb(imageUrl: product.imageUrl, size: 72)),
+          const SizedBox(height: 8),
+          Text(product.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 2),
+          Text('${formatWon(product.price)} / 개',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF5F5E5A))),
+          const Spacer(),
+          Center(child: _QtyStepper(product: product)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 수량 스테퍼(-/숫자/+). 숫자를 탭하면 직접 입력. 목록·격자에서 공용.
+class _QtyStepper extends StatelessWidget {
+  const _QtyStepper({required this.product});
 
   final Product product;
 
@@ -283,59 +377,35 @@ class _ProductRow extends StatelessWidget {
       valueListenable: Cart.items,
       builder: (BuildContext context, Map<String, int> items, _) {
         final int qty = items[product.id] ?? 0;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: <Widget>[
-              ProductThumb(imageUrl: product.imageUrl),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(product.name, style: const TextStyle(fontSize: 14)),
-                    const SizedBox(height: 2),
-                    Text('${formatWon(product.price)} / 개',
-                        style: const TextStyle(
-                            fontSize: 12, color: Color(0xFF5F5E5A))),
-                  ],
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline),
+              onPressed: qty > 0 ? () => Cart.add(product.id, -1) : null,
+            ),
+            InkWell(
+              onTap: () => _editQty(context, qty),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 36),
+                alignment: Alignment.center,
+                child: Text(
+                  '$qty',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: qty > 0 ? FontWeight.w500 : FontWeight.w400,
+                    color: qty > 0 ? null : const Color(0xFF8A8880),
+                  ),
                 ),
               ),
-              _stepper(context, qty),
-            ],
-          ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: () => Cart.add(product.id, 1),
+            ),
+          ],
         );
       },
-    );
-  }
-
-  Widget _stepper(BuildContext context, int qty) {
-    return Row(
-      children: <Widget>[
-        IconButton(
-          icon: const Icon(Icons.remove_circle_outline),
-          onPressed: qty > 0 ? () => Cart.add(product.id, -1) : null,
-        ),
-        InkWell(
-          onTap: () => _editQty(context, qty),
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 36),
-            alignment: Alignment.center,
-            child: Text(
-              '$qty',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: qty > 0 ? FontWeight.w500 : FontWeight.w400,
-                color: qty > 0 ? null : const Color(0xFF8A8880),
-              ),
-            ),
-          ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline),
-          onPressed: () => Cart.add(product.id, 1),
-        ),
-      ],
     );
   }
 
