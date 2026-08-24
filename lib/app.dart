@@ -8,8 +8,8 @@ import 'core/models/app_user.dart';
 import 'core/models/partner.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/fcm_service.dart';
+import 'features/admin/operator_main_screen.dart';
 import 'features/auth/login_screen.dart';
-import 'features/orders/operator_order_list_screen.dart';
 import 'features/orders/partner_home_screen.dart';
 
 class EwhaOrderingApp extends StatelessWidget {
@@ -92,7 +92,7 @@ class _RoleRouterState extends State<_RoleRouter> {
         }
         final AppUser appUser = AppUser.fromDoc(snapshot.data!);
         if (appUser.isOperator) {
-          return OperatorOrderListScreen(uid: widget.uid);
+          return OperatorMainScreen(uid: widget.uid);
         }
         return _PartnerGate(uid: widget.uid, partnerId: appUser.partnerId);
       },
