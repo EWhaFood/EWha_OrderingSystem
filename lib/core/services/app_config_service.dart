@@ -38,7 +38,7 @@ class AppConfigService {
       final String? minVersion = data['minVersion'] as String?;
       if (minVersion != null && minVersion.isNotEmpty) {
         final PackageInfo info = await PackageInfo.fromPlatform();
-        if (_isBelow(info.version, minVersion)) {
+        if (isVersionBelow(info.version, minVersion)) {
           return AppGateStatus(AppGateType.update,
               message: data['updateMessage'] as String?,
               updateUrl: data['updateUrl'] as String?);
@@ -52,7 +52,7 @@ class AppConfigService {
   }
 
   /// current < min 이면 true. "1.0.0+3" 같은 빌드 접미사는 무시하고 major.minor.patch만 비교.
-  static bool _isBelow(String current, String min) {
+  static bool isVersionBelow(String current, String min) {
     final List<int> c = _parse(current);
     final List<int> m = _parse(min);
     for (int i = 0; i < 3; i++) {
