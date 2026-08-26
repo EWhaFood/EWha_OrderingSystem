@@ -169,6 +169,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 앱 시작 게이트 설정(EWOS-42): 최소버전·점검 플래그. 미로그인 시작 시점에 읽어야 하므로
+    // 이 문서만 공개 read 허용(민감정보 없음). write는 운영자 전용.
+    match /settings/appConfig {
+      allow read: if true;
+      allow write: if isOperator();
+    }
+
     // 전역 설정 (마감 시간 등). 운영자만 write 가능, 로그인 사용자는 read 가능.
     match /settings/{doc} {
       allow read: if isSignedIn();

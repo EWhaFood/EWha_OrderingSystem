@@ -108,3 +108,15 @@ test('비활성 거래처는 자기 데이터 접근 거부', async () => {
   // 단, 자기 partners 문서 read는 '비활성 안내' 표시를 위해 허용돼야 한다.
   await assertSucceeds(getDoc(doc(asInactive(), 'partners/PC')));
 });
+
+// ⑧ EWOS-42: settings/appConfig는 미로그인도 read 가능(시작 게이트), write는 운영자만.
+test('appConfig는 공개 read / 운영자만 write', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'settings/appConfig'),
+      {minVersion: '1.0.0', maintenance: false});
+  });
+  const anon = env.unauthenticatedContext().firestore();
+  await assertSucceeds(getDoc(doc(anon, 'settings/appConfig')));
+  await assertFails(setDoc(doc(asP1(), 'settings/appConfig'), {maintenance: true}));
+  await assertSucceeds(setDoc(doc(asOp(), 'settings/appConfig'), {maintenance: true}));
+});
