@@ -23,6 +23,14 @@ service cloud.firestore {
       return isSignedIn() ? userDoc().partnerId : null;
     }
 
+    // 거래처 계정의 활성 상태(EWOS-29). 비활성(active=false) 거래처는 자기 데이터 접근이 차단된다.
+    // 단, 자기 users·partners 문서 read는 앱이 '비활성 안내'를 띄우는 데 필요하므로 여기서 막지 않는다.
+    function isActivePartner() {
+      return isSignedIn()
+        && myPartnerId() != null
+        && get(/databases/$(database)/documents/partners/$(myPartnerId())).data.active == true;
+    }
+
     // 길이 1 이상의 문자열인지.
     function isNonEmptyString(v) {
       return v is string && v.size() > 0;
@@ -78,10 +86,10 @@ service cloud.firestore {
     // 삭제는 금지(감사 이력 보존).
     match /orders/{orderId} {
       allow read: if isOperator() ||
-        (isSignedIn() && resource.data.partnerId == myPartnerId());
-      allow create: if isOperator() || (isSignedIn() && isValidNewOrder());
+        (resource.data.partnerId == myPartnerId() && isActivePartner());
+      allow create: if isOperator() || (isValidNewOrder() && isActivePartner());
       allow update: if isOperator() || (
-        isSignedIn() &&
+        isActivePartner() &&
         resource.data.partnerId == myPartnerId() &&
         resource.data.status in ['new', 'hold'] &&
         request.resource.data.status == 'canceled' &&
@@ -95,12 +103,12 @@ service cloud.firestore {
     // create 시 partnerId 위조 방지 + name 비어있지 않음 + items가 리스트인지 검증한다.
     match /favorites/{favId} {
       allow read: if isOperator() ||
-        (isSignedIn() && resource.data.partnerId == myPartnerId());
-      allow create: if isSignedIn() &&
+        (resource.data.partnerId == myPartnerId() && isActivePartner());
+      allow create: if isActivePartner() &&
         request.resource.data.partnerId == myPartnerId() &&
         isNonEmptyString(request.resource.data.name) &&
         request.resource.data.items is list;
-      allow update, delete: if isSignedIn() &&
+      allow update, delete: if isActivePartner() &&
         resource.data.partnerId == myPartnerId();
     }
 
@@ -108,15 +116,15 @@ service cloud.firestore {
     // 운영자는 모든 정기발주를 읽을 수 있고, 거래처 본인은 자신의 것만 읽고 쓰고 관리할 수 있다.
     match /standing_orders/{id} {
       allow read: if isOperator() ||
-        (isSignedIn() && resource.data.partnerId == myPartnerId());
-      allow create: if isSignedIn() &&
+        (resource.data.partnerId == myPartnerId() && isActivePartner());
+      allow create: if isActivePartner() &&
         request.resource.data.partnerId == myPartnerId() &&
         isNonEmptyString(request.resource.data.favoriteId) &&
         request.resource.data.cycle is map;
-      allow update: if isSignedIn() &&
+      allow update: if isActivePartner() &&
         resource.data.partnerId == myPartnerId() &&
         request.resource.data.partnerId == myPartnerId();
-      allow delete: if isSignedIn() &&
+      allow delete: if isActivePartner() &&
         resource.data.partnerId == myPartnerId();
     }
 
@@ -140,7 +148,7 @@ service cloud.firestore {
     match /inquiries/{orderId} {
       function canAccessInquiry() {
         let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
-        return isOperator() || (isSignedIn() && order.partnerId == myPartnerId());
+        return isOperator() || (order.partnerId == myPartnerId() && isActivePartner());
       }
       allow read, write: if canAccessInquiry();
 

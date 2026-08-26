@@ -124,3 +124,7 @@ app.*.symbols
 serviceAccountKey.json
 **/serviceAccountKey.json
 *-adminsdk-*.json
+
+# Firestore rules test deps
+firestore-tests/node_modules/
+firestore-debug.log
