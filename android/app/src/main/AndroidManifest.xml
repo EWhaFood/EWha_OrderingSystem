@@ -26,6 +26,15 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- 간편결제(PortOne, EWOS-52) 외부 앱 복귀용 커스텀 스킴.
+                 PaymentConfig.appScheme('ewhaorder')와 일치시킨다.
+                 카카오페이·네이버페이·토스 등에서 결제 후 앱으로 돌아올 때 사용. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="ewhaorder"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

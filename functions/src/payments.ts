@@ -95,12 +95,13 @@ async function buildItems(
   return {items, total};
 }
 
-/** PortOne V2로 결제를 대조한다. 상태=PAID·금액=주문합계·통화=KRW가 아니면 예외. */
-async function verifyPortonePayment(
+interface PortonePayment { status: string; total: number; currency: string; }
+
+/** PortOne V2 결제를 조회한다(상태·금액·통화). HTTP 오류 시에만 예외. */
+async function fetchPortonePayment(
   paymentId: string,
-  expectedTotal: number,
   secret: string,
-): Promise<void> {
+): Promise<PortonePayment> {
   const res = await fetch(
     `https://api.portone.io/payments/${encodeURIComponent(paymentId)}`,
     {headers: {Authorization: `PortOne ${secret}`}},
@@ -110,15 +111,41 @@ async function verifyPortonePayment(
   }
   const p = await res.json() as
     {status?: string; currency?: string; amount?: {total?: number}};
-  if (p.status !== "PAID") {
-    throw new HttpsError("failed-precondition", "결제가 완료되지 않았습니다.");
-  }
-  if (p.currency && p.currency !== "KRW") {
-    throw new HttpsError("failed-precondition", "결제 통화가 올바르지 않습니다.");
-  }
-  if ((p.amount?.total ?? -1) !== expectedTotal) {
-    throw new HttpsError(
-      "failed-precondition", "결제 금액이 주문 금액과 일치하지 않습니다.");
+  return {
+    status: p.status ?? "",
+    total: p.amount?.total ?? -1,
+    currency: p.currency ?? "",
+  };
+}
+
+/**
+ * 결제를 취소(환불)한다. 결제는 됐는데 주문을 못 만든 경우 돈이 묶이지 않도록 한다(EWOS-52).
+ * best-effort: 실패해도 예외를 던지지 않고 로깅만 한다(원래의 실패 사유를 가리지 않도록).
+ */
+async function cancelPortonePayment(
+  paymentId: string,
+  reason: string,
+  secret: string,
+): Promise<void> {
+  try {
+    const res = await fetch(
+      `https://api.portone.io/payments/${encodeURIComponent(paymentId)}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `PortOne ${secret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({reason}),
+      },
+    );
+    if (!res.ok) {
+      logger.warn("PortOne 결제 취소 실패", {paymentId, status: res.status});
+    } else {
+      logger.info("PortOne 결제 취소(환불)", {paymentId, reason});
+    }
+  } catch (e) {
+    logger.error("PortOne 결제 취소 예외", {paymentId, error: String(e)});
   }
 }
 
@@ -155,37 +182,55 @@ export const createPaidOrder = onCall(
       return {orderNo: dup.docs[0].data().orderNo as string, duplicated: true};
     }
 
-    const {items, total} = await buildItems(db, qtys);
-    if (items.length === 0) {
-      throw new HttpsError("failed-precondition", "유효한 품목이 없습니다.");
+    const secret = PORTONE_API_SECRET.value();
+    const pay = await fetchPortonePayment(paymentId, secret);
+    if (pay.status !== "PAID") {
+      // 결제가 실제로 완료되지 않았으면 취소할 것도 없다.
+      throw new HttpsError("failed-precondition", "결제가 완료되지 않았습니다.");
     }
-    await verifyPortonePayment(paymentId, total, PORTONE_API_SECRET.value());
 
-    const desired = req.data?.desiredDeliveryDate;
-    const orderNo = serverOrderNo(new Date());
-    const ref = await db.collection("orders").add({
-      orderNo,
-      source: "app",
-      status: "new",
-      partnerId,
-      partnerName: partner.name ?? "",
-      items,
-      totalAmount: total,
-      shippingAddress: (req.data?.shippingAddress ?? null) as string | null,
-      memo: (req.data?.memo ?? null) as string | null,
-      paymentStatus: "paid",
-      paymentId,
-      paidAmount: total,
-      paidAt: FieldValue.serverTimestamp(),
-      desiredDeliveryDate: desired ? Timestamp.fromMillis(Number(desired)) : null,
-      history: [{status: "new", byUid: uid, at: Timestamp.now()}],
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    await notifyOperators(
-      "새 발주 접수(결제완료)",
-      `${partner.name ?? "거래처"} · ${orderNo} 간편결제 발주가 접수되었습니다.`,
-    );
-    logger.info("간편결제 주문 생성", {orderId: ref.id, paymentId, total});
-    return {orderNo};
+    // 여기부터 결제는 완료 상태. 어떤 이유로든 주문을 못 만들면 결제를 취소(환불)한다.
+    try {
+      const {items, total} = await buildItems(db, qtys);
+      if (items.length === 0) {
+        throw new HttpsError("failed-precondition", "유효한 품목이 없습니다.");
+      }
+      if (pay.currency !== "KRW" || pay.total !== total) {
+        throw new HttpsError(
+          "failed-precondition", "결제 금액이 주문 금액과 일치하지 않습니다.");
+      }
+      const desired = req.data?.desiredDeliveryDate;
+      const orderNo = serverOrderNo(new Date());
+      const ref = await db.collection("orders").add({
+        orderNo,
+        source: "app",
+        status: "new",
+        partnerId,
+        partnerName: partner.name ?? "",
+        items,
+        totalAmount: total,
+        shippingAddress: (req.data?.shippingAddress ?? null) as string | null,
+        memo: (req.data?.memo ?? null) as string | null,
+        paymentStatus: "paid",
+        paymentId,
+        paidAmount: total,
+        paidAt: FieldValue.serverTimestamp(),
+        desiredDeliveryDate:
+          desired ? Timestamp.fromMillis(Number(desired)) : null,
+        history: [{status: "new", byUid: uid, at: Timestamp.now()}],
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      await notifyOperators(
+        "새 발주 접수(결제완료)",
+        `${partner.name ?? "거래처"} · ${orderNo} 간편결제 발주가 접수되었습니다.`,
+      );
+      logger.info("간편결제 주문 생성", {orderId: ref.id, paymentId, total});
+      return {orderNo};
+    } catch (e) {
+      // 결제는 됐는데 주문을 못 만든 경우 → 자동 환불 후 원래 오류를 전달.
+      const reason = e instanceof HttpsError ? e.message : "주문 생성 실패";
+      await cancelPortonePayment(paymentId, reason, secret);
+      throw e;
+    }
   },
 );
