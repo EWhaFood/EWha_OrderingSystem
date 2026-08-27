@@ -51,6 +51,8 @@ dependencies:
   fl_chart: ^0.70.2
   # EWOS-42 강제 업데이트·점검 게이트: 런타임 앱 버전 조회용.
   package_info_plus: ^8.1.0
+  # EWOS-52 간편결제: PortOne V2 브라우저 SDK를 웹뷰로 로드(공식 webview_flutter, 툴체인 호환).
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:
