@@ -258,6 +258,31 @@ class OrderService {
     });
   }
 
+  /// 간편결제(PortOne) 발주 (EWOS-52). 결제 성공 후 호출한다.
+  /// Functions가 금액을 재계산하고 PortOne로 결제를 검증한 뒤에만 주문을 만든다.
+  /// paymentId 기준 멱등이라 재호출해도 주문은 1건이다. 발주번호를 돌려준다.
+  static Future<String> createPaidOrder({
+    required String paymentId,
+    required Map<String, int> qtys,
+    String? shippingAddress,
+    String? memo,
+    DateTime? desiredDeliveryDate,
+  }) async {
+    final FirebaseFunctions fns =
+        FirebaseFunctions.instanceFor(region: 'asia-northeast3');
+    final HttpsCallableResult<dynamic> res = await fns
+        .httpsCallable('createPaidOrder')
+        .call<dynamic>(<String, dynamic>{
+      'paymentId': paymentId,
+      'qtys': qtys,
+      'shippingAddress': shippingAddress,
+      'memo': memo,
+      'desiredDeliveryDate': desiredDeliveryDate?.millisecondsSinceEpoch,
+    });
+    final Map<dynamic, dynamic> data = res.data as Map<dynamic, dynamic>;
+    return data['orderNo'] as String;
+  }
+
   /// 발주를 저장하고 발주번호를 돌려준다.
   static Future<String> submit({
     required String uid,

@@ -46,7 +46,9 @@ service cloud.firestore {
         && isNonEmptyString(d.orderNo)
         && d.partnerName is string
         && d.items is list && d.items.size() > 0
-        && d.totalAmount is int && d.totalAmount >= 0;
+        && d.totalAmount is int && d.totalAmount >= 0
+        // 결제완료 주문은 Functions(createPaidOrder)만 만든다. 클라 위조 차단(EWOS-52).
+        && d.paymentStatus == 'unpaid';
     }
 
     // 본인 문서만 read. 본인이 자기 fcmTokens(문자열 리스트)만 갱신하는 update는 허용하되,
