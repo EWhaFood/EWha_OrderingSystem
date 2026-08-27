@@ -12,6 +12,7 @@ import 'core/services/auth_service.dart';
 import 'core/services/fcm_service.dart';
 import 'features/admin/operator_main_screen.dart';
 import 'features/auth/login_screen.dart';
+import 'features/customer/customer_home_screen.dart';
 import 'features/orders/partner_home_screen.dart';
 
 class EwhaOrderingApp extends StatelessWidget {
@@ -157,16 +158,20 @@ class _RoleRouterState extends State<_RoleRouter> {
   Widget build(BuildContext context) {
     final DocumentReference<Map<String, dynamic>> ref =
         FirebaseFirestore.instance.collection('users').doc(widget.uid);
-    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      future: ref.get(),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: ref.snapshots(),
       builder: (BuildContext context,
           AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot) {
-        if (!snapshot.hasData) {
+        // 문서가 아직 없으면(구글 최초 로그인 프로비저닝 대기 등) 스플래시를 유지한다.
+        if (!snapshot.hasData || !(snapshot.data?.exists ?? false)) {
           return const _SplashScreen();
         }
         final AppUser appUser = AppUser.fromDoc(snapshot.data!);
         if (appUser.isOperator) {
           return OperatorMainScreen(uid: widget.uid);
+        }
+        if (appUser.role == UserRole.customer) {
+          return CustomerHomeScreen(uid: widget.uid);
         }
         return _PartnerGate(uid: widget.uid, partnerId: appUser.partnerId);
       },
