@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../core/config/payment_config.dart';
 import '../../core/models/partner.dart';
 import '../../core/models/product.dart';
 import '../../core/services/order_service.dart';
-import '../../core/services/payment_service.dart';
 import '../../core/utils/format.dart';
 import 'cart.dart';
 
@@ -246,122 +244,27 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
   }
 
   Widget _submitBar() {
-    final bool pay = PaymentConfig.isConfigured;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (pay) ...<Widget>[
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed:
-                      (_submitting || _lines.isEmpty) ? null : _payAndSubmit,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF185FA5),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: Text('${formatWon(_total)} 간편결제로 발주',
-                      style: const TextStyle(fontSize: 15)),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: (_submitting || _lines.isEmpty) ? null : _submit,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A1A18),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: _submitting
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : Text(
-                        pay ? '계좌이체로 발주' : '${formatWon(_total)} 발주 제출',
-                        style: const TextStyle(fontSize: 15)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 간편결제(PortOne) → 결제 성공 시 서버가 검증 후 주문 생성 (EWOS-52).
-  Future<void> _payAndSubmit() async {
-    if (_lines.isEmpty) return;
-    setState(() => _submitting = true);
-    final int amount = _total;
-    final String paymentId = PaymentService.newPaymentId();
-    final String orderName = _lines.length == 1
-        ? _lines.first.name
-        : '${_lines.first.name} 외 ${_lines.length - 1}건';
-    try {
-      final PaymentResult result = await PaymentService.requestPayment(
-        context,
-        paymentId: paymentId,
-        orderName: orderName,
-        amount: amount,
-      );
-      if (!result.ok) {
-        _showError(result.message ?? '결제가 취소되었습니다.');
-        if (mounted) setState(() => _submitting = false);
-        return;
-      }
-      final String orderNo = await OrderService.createPaidOrder(
-        paymentId: paymentId,
-        qtys: Map<String, int>.from(Cart.items.value),
-        shippingAddress: _address?.address,
-        memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
-        desiredDeliveryDate: _desiredDate,
-      );
-      Cart.clear();
-      if (mounted) await _showPaidDone(orderNo, amount);
-    } catch (_) {
-      _showError('결제는 되었으나 발주 처리에 실패했습니다. 운영자에게 문의해 주세요.');
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  /// 간편결제 완료 안내(결제 끝났으므로 계좌 안내 없음).
-  Future<void> _showPaidDone(String orderNo, int amount) async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: const Text('결제가 완료되었습니다'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('발주번호 $orderNo',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
-            const SizedBox(height: 12),
-            Text('결제 금액  ${formatWon(amount)}',
-                style:
-                    const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text('발주가 접수되었습니다.', style: TextStyle(fontSize: 13)),
-          ],
-        ),
-        actions: <Widget>[
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('확인'),
+        child: FilledButton(
+          onPressed: (_submitting || _lines.isEmpty) ? null : _submit,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF1A1A18),
+            padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-        ],
+          child: _submitting
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : Text('${formatWon(_total)} 발주 제출',
+                  style: const TextStyle(fontSize: 15)),
+        ),
       ),
     );
-    if (mounted) Navigator.pop(context);
   }
 
   /// 제출. 중복 제출은 _submitting 잠금으로 막고, 실패 시 사유를 안내한다.
