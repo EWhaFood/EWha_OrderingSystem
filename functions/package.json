@@ -7,6 +7,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && cd .. && firebase emulators:exec --only firestore --project demo-ewos \"node --test functions/test\"",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
@@ -16,6 +17,7 @@
     "firebase-functions": "^6.1.0"
   },
   "devDependencies": {
+    "firebase-functions-test": "^3.5.0",
     "typescript": "^5.6.0"
   },
   "private": true

@@ -35,7 +35,7 @@ function _order(partnerId) {
   return {
     source: 'app', status: 'new', partnerId, orderNo: '20260826-1',
     partnerName: '테스트', items: [{name: '사과', qty: 1}], totalAmount: 1000,
-    history: [], updatedAt: new Date(),
+    paymentStatus: 'unpaid', history: [], updatedAt: new Date(),
   };
 }
 
@@ -119,4 +119,11 @@ test('appConfig는 공개 read / 운영자만 write', async () => {
   await assertSucceeds(getDoc(doc(anon, 'settings/appConfig')));
   await assertFails(setDoc(doc(asP1(), 'settings/appConfig'), {maintenance: true}));
   await assertSucceeds(setDoc(doc(asOp(), 'settings/appConfig'), {maintenance: true}));
+});
+
+// ⑨ EWOS-52: 결제완료(paid) 주문은 클라이언트가 만들 수 없다(Functions 전용).
+test('paid 주문은 클라이언트 생성 불가 / unpaid는 허용', async () => {
+  const paid = {..._order('PA'), paymentStatus: 'paid'};
+  await assertFails(setDoc(doc(asP1(), 'orders/paid1'), paid));
+  await assertSucceeds(setDoc(doc(asP1(), 'orders/unpaid1'), _order('PA')));
 });
