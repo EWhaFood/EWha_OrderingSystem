@@ -23,6 +23,9 @@ export {clearTestData} from "./maintenance";
 // 입금 확인 요청 (거래처 → 운영자) (EWOS-44) + 간편결제 즉시결제 발주 (EWOS-52)
 export {requestPaymentConfirm, createPaidOrder} from "./payments";
 
+// 일반 사용자(B2C) 구글 가입 프로비저닝 (EWOS-53)
+export {provisionCustomer} from "./customer";
+
 // 카페24 OAuth·토큰 갱신·웹훅 (EWOS-19) + 주문 폴링 (EWOS-21) + 상품 동기화 (EWOS-22)
 export {
   cafe24Install,

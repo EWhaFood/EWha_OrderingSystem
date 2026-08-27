@@ -53,6 +53,8 @@ dependencies:
   package_info_plus: ^8.1.0
   # EWOS-52 간편결제: PortOne V2 브라우저 SDK를 웹뷰로 로드(공식 webview_flutter, 툴체인 호환).
   webview_flutter: ^4.10.0
+  # EWOS-53 일반 사용자(B2C) 구글 로그인.
+  google_sign_in: ^6.2.2
 
 dev_dependencies:
   flutter_test:

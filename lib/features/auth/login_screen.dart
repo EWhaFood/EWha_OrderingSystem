@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/services/auth_service.dart';
 import 'signup_screen.dart';
 
 /// 운영자·거래처 공통 로그인 화면. 로그인 성공 후 라우팅은 AuthGate가 role로 분기한다.
@@ -65,6 +65,23 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// 구글 로그인/가입 (EWOS-53). 성공 시 AuthGate가 role로 자동 라우팅한다.
+  Future<void> _googleSignIn() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await signInWithGoogle();
+    } on FirebaseAuthException catch (e) {
+      setState(() => _error = _messageFor(e.code));
+    } catch (_) {
+      setState(() => _error = '구글 로그인에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   void _goToSignup() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(builder: (_) => const SignupScreen()),
@@ -113,6 +130,23 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: const Text('비밀번호를 잊으셨나요?'),
                 ),
                 const Divider(height: 24),
+                const Text('일반 사용자',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _googleSignIn,
+                  icon: const Icon(Icons.g_mobiledata, size: 28),
+                  label: const Text('구글로 시작하기'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('거래처(업체)',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Color(0xFF8A8880))),
+                const SizedBox(height: 8),
                 OutlinedButton(
                   onPressed: _loading ? null : _goToSignup,
                   style: OutlinedButton.styleFrom(
