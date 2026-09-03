@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/services/auth_service.dart';
+import '../legal/legal_screen.dart';
 import 'signup_screen.dart';
 
 /// 운영자·거래처 공통 로그인 화면. 로그인 성공 후 라우팅은 AuthGate가 role로 분기한다.
@@ -65,8 +66,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// 구글 로그인/가입 (EWOS-53). 성공 시 AuthGate가 role로 자동 라우팅한다.
+  /// 구글 로그인/가입 (EWOS-53). 가입 전 약관·개인정보 동의를 먼저 받는다(EWOS-41).
   Future<void> _googleSignIn() async {
+    final bool agreed = await _confirmLegalConsent();
+    if (!agreed) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -80,6 +83,68 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// 구글 가입 전 약관·개인정보 동의 시트. "동의하고 계속"을 누르면 true.
+  Future<bool> _confirmLegalConsent() async {
+    final bool? ok = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('약관 동의',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  _legalLink(ctx, '이용약관', LegalDoc.terms),
+                  const Text(' 및 '),
+                  _legalLink(ctx, '개인정보처리방침', LegalDoc.privacy),
+                  const Text('에 동의하고 계속합니다. (필수)'),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('취소'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A1A18)),
+                      child: const Text('동의하고 계속'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return ok ?? false;
+  }
+
+  Widget _legalLink(BuildContext ctx, String label, LegalDoc doc) {
+    return GestureDetector(
+      onTap: () => LegalScreen.open(ctx, doc),
+      child: Text(label,
+          style: const TextStyle(
+              color: Color(0xFF3B7A57),
+              decoration: TextDecoration.underline,
+              fontWeight: FontWeight.w600)),
+    );
   }
 
   void _goToSignup() {
