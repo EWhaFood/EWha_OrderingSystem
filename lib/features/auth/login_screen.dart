@@ -219,6 +219,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   child: const Text('초대 코드로 가입'),
                 ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    _legalLink(context, '개인정보처리방침', LegalDoc.privacy),
+                    const Text('   ·   ',
+                        style: TextStyle(color: Color(0xFF8A8880))),
+                    _legalLink(context, '이용약관', LegalDoc.terms),
+                  ],
+                ),
               ],
             ),
           ),
