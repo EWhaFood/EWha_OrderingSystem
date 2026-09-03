@@ -267,6 +267,8 @@ class OrderService {
     String? shippingAddress,
     String? memo,
     DateTime? desiredDeliveryDate,
+    String? customerName,
+    String? phone,
   }) async {
     final FirebaseFunctions fns =
         FirebaseFunctions.instanceFor(region: 'asia-northeast3');
@@ -278,6 +280,8 @@ class OrderService {
       'shippingAddress': shippingAddress,
       'memo': memo,
       'desiredDeliveryDate': desiredDeliveryDate?.millisecondsSinceEpoch,
+      'customerName': customerName,
+      'phone': phone,
     });
     final Map<dynamic, dynamic> data = res.data as Map<dynamic, dynamic>;
     return data['orderNo'] as String;
