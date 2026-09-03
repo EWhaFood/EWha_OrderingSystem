@@ -169,10 +169,17 @@ export const createPaidOrder = onCall(
     const db = getFirestore();
     const user = (await db.collection("users").doc(uid).get()).data();
     const partnerId = user?.partnerId as string | undefined;
-    if (!partnerId) throw new HttpsError("permission-denied", "거래처 계정이 아닙니다.");
-    const partner = (await db.collection("partners").doc(partnerId).get()).data();
-    if (!partner || partner.active !== true) {
-      throw new HttpsError("permission-denied", "비활성 거래처입니다.");
+    const isCustomer = user?.role === "customer" && !partnerId;
+    let partnerName = "";
+    if (partnerId) {
+      const partner =
+        (await db.collection("partners").doc(partnerId).get()).data();
+      if (!partner || partner.active !== true) {
+        throw new HttpsError("permission-denied", "비활성 거래처입니다.");
+      }
+      partnerName = (partner.name as string) ?? "";
+    } else if (!isCustomer) {
+      throw new HttpsError("permission-denied", "주문 권한이 없는 계정입니다.");
     }
 
     // 멱등성: 같은 결제로 이미 만든 주문이 있으면 그대로 반환.
@@ -205,8 +212,12 @@ export const createPaidOrder = onCall(
         orderNo,
         source: "app",
         status: "new",
-        partnerId,
-        partnerName: partner.name ?? "",
+        partnerId: partnerId ?? null,
+        partnerName,
+        customerId: isCustomer ? uid : null,
+        customerName:
+          isCustomer ? ((req.data?.customerName ?? "") as string) : null,
+        phone: isCustomer ? ((req.data?.phone ?? "") as string) : null,
         items,
         totalAmount: total,
         shippingAddress: (req.data?.shippingAddress ?? null) as string | null,
@@ -220,9 +231,12 @@ export const createPaidOrder = onCall(
         history: [{status: "new", byUid: uid, at: Timestamp.now()}],
         createdAt: FieldValue.serverTimestamp(),
       });
+      const who = partnerId ?
+        partnerName :
+        ((req.data?.customerName ?? "고객") as string);
       await notifyOperators(
         "새 발주 접수(결제완료)",
-        `${partner.name ?? "거래처"} · ${orderNo} 간편결제 발주가 접수되었습니다.`,
+        `${who || "고객"} · ${orderNo} 간편결제 발주가 접수되었습니다.`,
       );
       logger.info("간편결제 주문 생성", {orderId: ref.id, paymentId, total});
       return {orderNo};

@@ -88,7 +88,8 @@ service cloud.firestore {
     // 삭제는 금지(감사 이력 보존).
     match /orders/{orderId} {
       allow read: if isOperator() ||
-        (resource.data.partnerId == myPartnerId() && isActivePartner());
+        (resource.data.partnerId == myPartnerId() && isActivePartner()) ||
+        (isSignedIn() && resource.data.customerId == request.auth.uid);
       allow create: if isOperator() || (isValidNewOrder() && isActivePartner());
       allow update: if isOperator() || (
         isActivePartner() &&

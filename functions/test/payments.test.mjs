@@ -83,3 +83,21 @@ test("같은 paymentId 재호출 → 멱등(주문 1건, 중복 생성 없음)",
   assert.equal(b.duplicated, true);
   assert.equal((await ordersByPayment("pay_idem")).length, 1);
 });
+
+// EWOS-53: 일반 사용자(customer)도 partnerId 없이 주문 생성(customerId 기록).
+test("customer(구글 가입) 주문 → customerId로 생성, partnerId 없음", async () => {
+  await db.doc("users/c1").set({role: "customer", email: "c@x.com"});
+  const res = await wrapped({
+    data: {
+      paymentId: "pay_cust", qtys: {prod1: 2},
+      customerName: "홍길동", phone: "01011112222", shippingAddress: "서울시",
+    },
+    auth: {uid: "c1"},
+  });
+  assert.ok(res.orderNo);
+  const docs = await ordersByPayment("pay_cust");
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].data().customerId, "c1");
+  assert.equal(docs[0].data().partnerId, null);
+  assert.equal(docs[0].data().customerName, "홍길동");
+});
