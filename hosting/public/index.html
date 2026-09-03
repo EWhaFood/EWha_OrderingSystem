@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>이화 발주</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      color: #1c1b1f; background: #f7f6f2; line-height: 1.6;
+    }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 48px 24px; }
+    .logo {
+      width: 56px; height: 56px; border-radius: 14px; background: #185fa5;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 28px; margin-bottom: 20px;
+    }
+    h1 { font-size: 24px; margin: 0 0 8px; }
+    p.sub { color: #6b6a64; margin: 0 0 32px; }
+    .links { display: flex; flex-direction: column; gap: 12px; }
+    a.card {
+      display: block; padding: 16px 18px; background: #fff; border: 1px solid #e5e4de;
+      border-radius: 12px; text-decoration: none; color: #1c1b1f; font-weight: 600;
+    }
+    a.card span { display: block; font-weight: 400; color: #6b6a64; font-size: 13px; margin-top: 4px; }
+    footer { margin-top: 40px; color: #8a8880; font-size: 12px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1c1b1f; color: #e6e1e5; }
+      a.card { background: #2b2930; border-color: #48464c; color: #e6e1e5; }
+      a.card span { color: #cac4d0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">📋</div>
+    <h1>이화 발주</h1>
+    <p class="sub">거래처·소비자를 위한 상품 발주 서비스</p>
+    <div class="links">
+      <a class="card" href="./privacy.html">개인정보처리방침<span>수집 항목·이용 목적·보관 기간·제3자 제공 안내</span></a>
+      <a class="card" href="./terms.html">이용약관<span>서비스 이용 조건</span></a>
+    </div>
+    <footer>© 이화 발주. 문의: [문의 이메일]</footer>
+  </div>
+</body>
+</html>
