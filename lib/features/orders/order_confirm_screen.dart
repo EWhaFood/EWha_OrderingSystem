@@ -256,7 +256,7 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: busy ? null : _payAndSubmit,
+                onPressed: busy ? null : _chooseMethodAndPay,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF185FA5),
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -291,13 +291,40 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
     );
   }
 
-  /// 간편결제(PortOne) → 결제 성공 시 서버가 검증 후 주문 생성 (EWOS-52).
-  Future<void> _payAndSubmit() async {
+  /// 결제 수단(카드/카카오페이/네이버페이)을 고르고 결제를 시작한다 (EWOS-52/54).
+  Future<void> _chooseMethodAndPay() async {
     if (_lines.isEmpty) return;
     if (!PaymentConfig.isConfigured) {
       _showError('간편결제 설정(PortOne 키)이 아직 없습니다. 계좌이체로 발주해 주세요.');
       return;
     }
+    final PaymentMethod? method = await showModalBottomSheet<PaymentMethod>(
+      context: context,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('결제 수단 선택',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+            for (final PaymentMethod m in PaymentMethod.values)
+              ListTile(
+                leading: Icon(m.icon),
+                title: Text(m.label),
+                onTap: () => Navigator.pop(ctx, m),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (method != null) await _payWith(method);
+  }
+
+  /// 선택한 수단으로 결제 → 성공 시 서버가 검증 후 주문 생성 (EWOS-52/54).
+  Future<void> _payWith(PaymentMethod method) async {
     setState(() => _submitting = true);
     final int amount = _total;
     final String paymentId = PaymentService.newPaymentId();
@@ -310,6 +337,7 @@ class _OrderConfirmScreenState extends State<OrderConfirmScreen> {
         paymentId: paymentId,
         orderName: orderName,
         amount: amount,
+        method: method,
       );
       if (!result.ok) {
         _showError(result.message ?? '결제가 취소되었습니다.');
