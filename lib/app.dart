@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -12,6 +13,7 @@ import 'core/services/auth_service.dart';
 import 'core/services/fcm_service.dart';
 import 'features/admin/operator_main_screen.dart';
 import 'features/auth/login_screen.dart';
+import 'features/auth/onboarding_screen.dart';
 import 'features/customer/customer_home_screen.dart';
 import 'features/orders/partner_home_screen.dart';
 
@@ -127,11 +129,50 @@ class AuthGate extends StatelessWidget {
         }
         final User? user = snapshot.data;
         if (user == null) {
-          return const LoginScreen();
+          // 로그인 기록이 없으면 첫 실행 온보딩(약관 동의) → 로그인.
+          // 세션이 있으면 이 분기를 타지 않으므로 자동 로그인된다.
+          return const _LoggedOutGate();
         }
         return _RoleRouter(uid: user.uid);
       },
     );
+  }
+}
+
+/// 미로그인 상태 게이트. 최초 1회 온보딩(약관 동의)을 보여주고, 이후에는 로그인 화면으로.
+class _LoggedOutGate extends StatefulWidget {
+  const _LoggedOutGate();
+
+  @override
+  State<_LoggedOutGate> createState() => _LoggedOutGateState();
+}
+
+class _LoggedOutGateState extends State<_LoggedOutGate> {
+  static const String _key = 'onboardingDone';
+  bool? _onboarded; // null = 로딩 중
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _onboarded = prefs.getBool(_key) ?? false);
+  }
+
+  Future<void> _complete() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, true);
+    if (mounted) setState(() => _onboarded = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_onboarded == null) return const _SplashScreen();
+    if (!_onboarded!) return OnboardingScreen(onStart: _complete);
+    return const LoginScreen();
   }
 }
 

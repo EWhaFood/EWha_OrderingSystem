@@ -55,6 +55,8 @@ dependencies:
   webview_flutter: ^4.10.0
   # EWOS-53 일반 사용자(B2C) 구글 로그인.
   google_sign_in: ^6.2.2
+  # 첫 실행 온보딩 표시 여부 저장.
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:
